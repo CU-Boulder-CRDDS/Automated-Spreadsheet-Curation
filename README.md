@@ -13,7 +13,7 @@ contact: ellery.galvin@colorado.edu
 
 ## Tests implemented to date
 - filename short enough
-- table location in the upper left corner.
+- table location in the upper left corner
 - column headers acceptable
 - no special characters
 - no untrimmed white space
