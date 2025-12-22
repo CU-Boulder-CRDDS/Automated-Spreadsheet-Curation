@@ -1,4 +1,6 @@
-import pandas as pd # Reading excel files
+import pandas as pd # Reading excel filesh
+import numpy as np # Numerical operations
+import pprint # Pretty printing results for long output
 from abc import ABC, abstractmethod # Creating abstract classes
 import re # Regular expressions to test cell contents
 import json # Saving results to json
@@ -21,12 +23,39 @@ class Test_Suite():
             io = wb_path, # The file path
             dtype = "str", # Parse all cells as strings, leaves the parsing to the tests
             sheet_name = None, # read all sheets returning a dict
-            header = 0, # use first row as header, find later with grid_edges
+            header = None # Do not load the header at all
         )
+
+        # Set the first row to be headers no matter what
+        def set_headers(df):
+            # If empty
+            if df.empty:
+                # Just return
+                return df
+            else:
+                cols = df.iloc[0]
+                cols = cols.mask(cols.isna(), "Unnamed")
+                df.columns = cols
+                df = df[1:]
+                df = df.reset_index(drop=True)
+
+                return df
+        
+        # Use set_headers on each sheet
+        # Initiate new container
+        
+        # Iterate over dict
+        if isinstance(self.wb, dict):
+            # Get each dataframe in the dict
+            self.wb = {name : set_headers(df) for name, df in self.wb.items()}
+        else:
+            self.wb = set_headers(self.wb)
+
+
 
         # If no tests are provided, run all tests
         if to_run == None:
-            self.to_run = [Grid_Edges, Header, Special_Char, Untrimmed_White_Space, Question_Marks, White_Space_Only, Dates]
+            self.to_run = [Upper_Left_Corner, Multi_Table, Mixed_Datatypes, Header_Duplicates, Header_Length, Header_First_Char, Header_Space, Special_Char, Untrimmed_White_Space, Newlines_Tabs, Missing_Value_Text, Question_Mark_Only, White_Space_Only, Number_Space, Dates, Scientific_Notation]
         else:
             self.to_run = to_run
 
@@ -62,7 +91,7 @@ class Test_Suite():
 
             # First check if the sheet is empty
             # Initialize the empty test
-            empty_test = Empty(ws, self.wb_path)
+            empty_test = Worksheet_Empty(ws, self.wb_path)
 
             # Validate the empty test
             empty_test.validate()
@@ -77,6 +106,15 @@ class Test_Suite():
 
             # Initialize the results dict for this sheet
             self.results[sheet] = dict()
+
+            # First check the worksheet name
+            sheet_name_test = Worksheet_Name(ws, sheet)
+
+            # Validate the sheet name test
+            sheet_name_test.validate()
+
+            # Add the results to the results
+            self.results[sheet]["sheet_name"] = sheet_name_test
 
             # Initialize the queue of tests to run
             queue = self.to_run[:]
@@ -137,9 +175,12 @@ class Test_Suite():
 
         # For each sheet and its associated tests
         for sheet, tests in self.trimmed_results().items():
-
+            # Add extra extra space between sheets
+            print("\n\n" + 80 * "=")
             # Print the sheet name
             print(f"Sheet: {sheet}")
+            # Add space
+            print("\n")
 
             # For each tests applied to this sheet
             # trimmed_results is a dict of test names and their results
@@ -147,14 +188,13 @@ class Test_Suite():
                 
                 # Print the report for that test
                 print(f"Test: {test_name}")
-                print(f"Message: {trimmed_result['message']}")
-                print(f"Issues: {trimmed_result['issues']}")
+                print(f"Message: {pprint.pformat(trimmed_result['message'])}")
+                print(f"Issues: {pprint.pformat(trimmed_result['issues'])}")
 
                 # Add some space
                 print("\n")
 
-            # Add extra extra space between sheets
-            print("\n\n")
+            
 
     # Trim the results to only include dict entries for failed tests
     def trimmed_results(self, stringify = False):
@@ -209,7 +249,7 @@ class Test_Suite():
                 f"results{dt.now().strftime("%Y-%m-%d_%H-%M-%S")}.json", "w") as f:
 
                 # Dump the trimmed results to the file
-                json.dump(self.trimmed_results(stringify=True), f)
+                json.dump(self.trimmed_results(stringify=True), f, default = str)
 
         # If the requested format is csv
         elif format == "csv":
@@ -308,14 +348,6 @@ class Test(ABC):
         print(f"name: {self.name}\nstatus: {self.status}\nmessage: {self.message}\nissues: {self.issues}")
 
 
-# Abstract class for tests that produce results used by other tests
-# This class is used to create a feed forward structure
-class Feed_Forward(ABC):
-
-    def __init__(self):
-
-        # The feed_forward field is added
-        self.feed_forward = dict()
 
 # Abstract class for tests that depend on other tests
 class Has_Dependency(ABC):
@@ -389,7 +421,7 @@ class By_Cell(ABC):
     def not_valid(self, cell):
         pass
 
-class Empty(Test):
+class Worksheet_Empty(Test):
     def __init__(self, ws, wb_path):
         # Save the workbook path
         self.wb_path = wb_path
@@ -416,6 +448,41 @@ class Empty(Test):
             # Set the message
             self.message = "Worksheet is not empty"
 
+class Worksheet_Name(Test):
+    def __init__(self, ws, sheet_name):
+        # Save the sheet name
+        self.sheet_name = sheet_name
+
+        # Initialize the test named sheet_name
+        Test.__init__(self, ws, "sheet_name")
+
+    def validate(self):
+
+
+        # detect special characters in filename
+        spec_char = re.search(r"[!@#$%^&*()+=\[\]{};:'\"|\\,<>\?/]", self.sheet_name)
+        if spec_char:
+            self.status = False
+
+            self.issues["contains special characters"] = spec_char.group(0)
+        
+        # detect whitespace in filename
+        if re.search(r"\s", self.sheet_name):
+            self.status = False
+
+            self.issues["contains whitespace"] = self.sheet_name
+
+        
+        if  self.status is None:
+            # The test passed
+            self.status = True
+
+            # Set the message
+            self.message = "Worksheet name is acceptable"
+        else:
+            self.message = "Worksheet name is not acceptable"
+
+
 class Filename(Test):
     def __init__(self, ws, wb_path):
         # Save the workbook path
@@ -426,144 +493,466 @@ class Filename(Test):
 
     def validate(self):
 
-        # Check if the filename is too long
         if len(self.wb_path) > 200:
+            self.status = False
+
+            self.issues = {"length >200": len(self.wb_path)}
+        
+        if "final" in self.wb_path.lower():
+            self.status = False
+
+            self.issues["contains 'final'"] = self.wb_path
+        
+        # Detect if both _ and - are in filename
+        if "_" in self.wb_path and "-" in self.wb_path:
+            
+            # The test failed
+            self.status = False
+
+            # Add an issue
+            self.issues["contains both _ and -"] = self.wb_path
+
+        # detect special characters in filename
+        spec_char = re.search(r"[!@#$%^&*()+=\[\]{};:'\"|\\,<>\?/]", self.wb_path)
+
+        # If there were special chars
+        if spec_char:
+            # The test failed
+            self.status = False
+
+            # Add an issu
+            self.issues["contains special characters"] = spec_char.group(0)
+        
+        # detect whitespace in filename
+        if re.search(r"\s", self.wb_path):
 
             # The test failed
             self.status = False
 
-            # Set the message
-            self.message = "Filename is too long"
+            # Add an issue
+            self.issues["contains whitespace"] = self.wb_path
 
-            # Save the offending filename
-            self.issues = {"filename": self.wb_path}
-
-        else:
+        if  self.status is None:
             # The test passed
             self.status = True
 
             # Set the message
-            self.message = "Filename is not too long"
+            self.message = "Filename is acceptable"
+        else:
+            self.message = "Filename is not acceptable"
+
+
 
 # Check that the table is in the upper left corner
 # The first_row is not working.
-class Grid_Edges(Test, Feed_Forward):
+class Upper_Left_Corner(Test):
 
     def __init__(self, ws):
-        Test.__init__(self, ws, "grid_edges")
-        Feed_Forward.__init__(self)
+        Test.__init__(self, ws, "upper_left_corner")
 
         # Share that col_start and row_start are 0, default     
-        self.feed_forward["first_row_idx"] = 0
-        self.feed_forward["first_col_idx"] = 0
+        self.first_row_idx = 0
+        self.first_col_idx = 0
 
     def validate(self):
-        
-        # Check if the headers were empty when the sheet was imported
-        col_unnamed = self.ws.columns.str.contains("Unnamed")
 
-        # Check each col for NA values, extract idx of first non-NA in each
-        # Add one to each column name assigned to "Unnamed"
-        col_starts = col_unnamed + self.ws.notna().apply(
-            lambda x : x.idxmax(), axis = 0)
+        
+        mask = self.ws.notna().to_numpy()
+
+
+
+        # Detect whether the headers were defined
+        no_headers = self.ws.columns == "Unnamed"
+
+        # If none of the headers are defined, search in the table for the them
+        if no_headers.all():
+            # Check each col for NA values, extract idx of first non-NA in each
+            col_starts = np.argmax(mask, axis = 0)
+            col_starts = np.where(
+                np.sum(mask, axis = 0) == 0,
+                len(col_starts),
+                col_starts)
+
+        # Else one or more of the headers were defined
+        else:
+            # So the first col is above the top row of the table
+            col_starts = np.array([-1])
+
 
         # Check each row for NA values, extract column name of first non-NA
-        row_starts = self.ws.notna().apply(lambda x : x.idxmax(), axis = 1)
-
-        # Convert the column names into integers
-        row_starts = row_starts.map(lambda col: self.ws.columns.get_loc(col))
+        row_starts = np.argmax(mask, axis = 1)
+        row_starts = np.where(
+            np.sum(mask, axis = 1) == 0,
+            len(row_starts),
+            row_starts)
 
         # Set the start of the grid
         # The first nonempty row is where first column starts
-        first_row = col_starts.min()
+        first_row = int(col_starts.min())
 
-        # The first nonempty column is where first row starts
-        first_col = row_starts.min()
+        first_col = int(row_starts.min())
 
+        
         # Check for blank space before the first column or row
-        if first_col != 0 or first_row != 0:
+        if first_col > 0 or first_row >= 0:
             
             # Where exactly it failed
             self.issues["first_col_idx"] = first_col
-            self.issues["first_row_idx"] = first_row
+            self.issues["first_row_idx"] = first_row + 1
 
             # Save results to share with other tests
-            self.feed_forward["first_col_idx"] = first_col
-            self.feed_forward["first_row_idx"] = first_row
+            self.first_col_idx = first_col
+            self.first_row_idx = first_row + 1
+            # Mark that there is a displaced table
+            self.displaced = True
+            # Save an effective table
+            self.effective_ws = self.ws.iloc[first_row:, first_col:]
+            # First row is the column names
+            cols = self.effective_ws.iloc[0]
+            self.effective_ws.columns = cols
+            self.effective_ws = self.effective_ws[1:].reset_index(drop=True)
+        else:
+            self.displaced = False
+            self.effective_ws = self.ws
+
 
         Test.validate(self,
             "Table is not in the upper left corner",
             "Table is in the upper left corner"
         )
 
+# Detect if there are multiple tables
+class Multi_Table(Test, Has_Dependency):
 
-class Header(Test, Has_Dependency):
+    def __init__(self, ws):
+        Test.__init__(self, ws, "multi_table")
+        Has_Dependency.__init__(self, Upper_Left_Corner)
+
+    def validate(self, upper_left_corner):
+
+
+        # Get shifted worksheet if relevant
+        ws = upper_left_corner.effective_ws
+
+        # Dimensions
+        n_row, n_col = ws.shape
+
+        # Array = 0 where value exists, else 1
+        mask = ws.isna().to_numpy()
+        # Obtain offset in case table not in upper left corner
+        col_offset = upper_left_corner.first_col_idx
+        row_offset = upper_left_corner.first_row_idx
+        
+
+
+        # First value in each row
+        left_edge = np.argmin(mask, axis = 1)
+        # left_edge = 0 if either all True or all False
+        # test if all empty (True)
+        empty_rows = np.all(mask, axis = 1)
+        # Set left_edge to n_col if empty_row
+        left_edge = np.where(empty_rows == 1, n_col, left_edge)
+        # First value in each col
+        top_edge = np.argmin(mask, axis = 0)
+        # top_edge = 0 if either all True or all False
+        # test if all empty (True)
+        empty_cols = np.all(mask, axis = 0)
+        
+        # If there were any
+        if np.any(empty_cols):
+            # Could be multiple tables
+
+            # Get locations of empty columns
+            empty_cols_idx = np.argwhere(empty_cols)
+            # Add an issue
+            self.issues["empty columns"] = (empty_cols_idx + col_offset).tolist()
+        
+        # Set top_edge to n_row if empty_col
+        top_edge = np.where(empty_cols == 1, n_row, top_edge)
+        
+        # Look for lower right corner
+        # For candidate corner (i,j) in grid
+        # If left_edge > j and also top_edge > i
+        # We have a bounding box with
+        # Upper right (0,0) and lower right (i,j)
+
+        # Compute mesh grid of coordinates
+        ii, jj = np.mgrid[0:n_row, 0:n_col]
+
+        # Create zeros grid where empty cells left of left_edge filled with ones
+        left_grid = np.where(left_edge[:,np.newaxis] > jj, 1, 0 )
+
+        # Create zeros grid where empty cells above top_edge filled with ones
+        top_grid = np.where(top_edge[np.newaxis,:] > ii, 1, 0)
+
+        # If left padded grid intersects top padded grid
+        # Then there exists a bounding box around subset of data
+        box = np.logical_and(left_grid, top_grid)
+
+        # If there is a bounding box smaller than the whole table
+        if np.any(box):
+            # Get location of lower right corner candidates
+            lower_right_corners = np.argwhere(box)
+
+            # Get location of corner closest to 0,0
+            best_corner = lower_right_corners[0,:]
+
+            # Add offset back in
+            best_corner[0] = best_corner[0] + row_offset
+            best_corner[1] = best_corner[1] + col_offset
+
+            # Save the result as an issue
+            self.issues["multi_table_corner"] = best_corner.tolist()
+
+            # Feed forward property, prevents tests that would fail under multitable from running
+            self.multi_table = True
+        else:
+            self.multi_table = False
+
+        Test.validate(self,
+            "Found bounding box around table smaller than full dimensions.  Sheet may have multiple tables.",
+            "Sheet does not have multiple tables")
+
+
+class Mixed_Datatypes(Test, Has_Dependency):
 
     def __init__(self, ws):
 
+        # Initialize the test named mixed_datatypes
+        Test.__init__(self, ws, "mixed_datatypes")
+
+        # Needs to know if multiple tables are present
+        Has_Dependency.__init__(self, Multi_Table, Upper_Left_Corner)
+
+    def validate(self, multi_table, upper_left_corner):
+
+        # If there are multiple tables on this sheet
+        if multi_table.multi_table:
+            # Pass by default
+            Test.validate(self, None, "Multiple tables, cannot run test.  Pass by default.")    
+        
+        # Else there's a single table, run test
+        else:
+            # In case not in upper left corner, retrieve effective table
+            ws = upper_left_corner.effective_ws
+
+            n_rows, n_cols = ws.shape
+
+            # For each column in the worksheet
+
+            for col_idx, col_name in enumerate(ws.columns):
+
+                types_found = dict()
+
+                # Get the column data
+
+                col_data = ws.iloc[:,col_idx]
+
+                # Remove values that are missing to begin with
+
+                col_data = col_data[col_data.notna()]
+
+                # Attempt to convert the column to general numeric
+
+                col_float = pd.to_numeric(col_data, errors='coerce')
+
+                # Compute the number of rows that are possibly numeric
+
+                n_numeric = col_float.notna().sum()
+
+                # If there are any numeric rows
+
+                if n_numeric > 0:
+
+                    # Record the number of numeric entries
+
+                    types_found["numeric"] = int(n_numeric)
+
+                # Attempt to convert the column to datetime in any iso format
+                col_datetime = pd.to_datetime(col_data, errors='coerce', format = "ISO8601")
+
+                # Compute number of datetimes
+                n_datetime = col_datetime.notna().sum()
+
+                # If there are any dates
+                if n_datetime > 0:
+
+                    types_found["datetime"] = int(n_datetime)
+
+
+                # Compute number of missing data
+                n_missing = col_data.isna().sum()
+
+                # If it's not anything else, it must be text
+                n_text = n_rows - n_numeric - n_datetime - n_missing
+
+                # If there's any text
+                if n_text > 0:
+                    types_found["text"] = int(n_text)
+
+                    # Loop to the next column
+                    # Report each column containing multiple types
+                    # Loop over the columns
+
+                # If there are multiple types
+                if len(types_found.keys()) > 1:
+
+                    # Add to issues
+                    self.issues[col_name] = types_found
+
+                Test.validate(self,
+                    "Table contains columns with mixed data types",
+                    "Table columns each contains one datatype"
+                )
+
+        
+class Header(Test, Has_Dependency):
+
+    def __init__(self, ws, name):
+
         # Initialize the test named headers
-        Test.__init__(self, ws, "headers")
+        Test.__init__(self, ws, name)
 
         # This test depends on the grid edges test
-        Has_Dependency.__init__(self, Grid_Edges)
+        Has_Dependency.__init__(self, Upper_Left_Corner, Multi_Table)
+
+    def get_headers(self, upper_left_corner):
+        # Check that the grid edges test has been run
+        self.check_input(upper_left_corner)
+
+        return upper_left_corner.effective_ws.columns
+    
+    def handle_multi_table(self):
+        Test.validate(self,
+                        None,
+                        "Cannot assess headers if multiple tables are present.  Pass by default")
+        
+
+
+    
+
+
+class Header_Duplicates(Header):
+
+    def __init__(self, ws):
+
+        # Initialize a headers test
+        Header.__init__(self, ws, "header_duplicates")
+
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.detect_duplicates(upper_left_corner)
+
+    
+    def detect_duplicates(self, upper_left_corner):
+        # Get the headers
+        headers = self.get_headers(upper_left_corner)
+
+        # Extract duplicates
+        duplicates = headers[headers.duplicated(keep = False)]
+
+        # Check if there are duplicate headers
+        if len(duplicates) > 0:
+
+            # For each unique duplicate
+            for dup in duplicates.unique():
+
+                
+                    # Flag the location as an issue
+                    self.issues[dup] = f"Repeated {(duplicates == dup).sum()} times"
+
+        Test.validate(self, "Duplicate headers found", "All headers unique")
+
+    
+class Header_Length(Header):
+        
+        def __init__(self, ws):
+            Header.__init__(self, ws, "header_length")
+
+        def validate(self, upper_left_corner, multi_table):
+            if multi_table.multi_table:
+                self.handle_multi_table()
+            else:
+                self.check_length(upper_left_corner)
+
+        def check_length(self, upper_left_corner):
+
+            headers = self.get_headers(upper_left_corner)
 
             
+            # Iterate over headers
+            for idx, header in enumerate(headers):
 
-    def validate(self, grid_edges):
+                assert isinstance(header, str)
 
-        # Check that the grid edges test has been run
-        self.check_input(grid_edges)
+                # If bad length
+                if len(header) <=3:
+                    self.issues[(idx, header)] = "Header is less than 4 characters"
+                
+                if len(header) > 12:
+                    self.issues[(idx, header)] = "Header is more than 12 characters"
 
-        # Get the start of the grid from the grid edges test
-        first_row_idx = grid_edges.feed_forward["first_row_idx"]
-        first_col_idx = grid_edges.feed_forward["first_col_idx"]
+            Test.validate(self, "Some headers have improper lengths", "All headers have acceptable lengths")
+                
 
-        # If the table is not positioned correctly
-        if first_row_idx != 0 or first_col_idx != 0:
-            # Select the header row
-            # -1 because pandas makes the first row headers
-            headers = self.ws.iloc[first_row_idx - 1, first_col_idx:]
 
-        else: 
-            headers = self.ws.columns
+class Header_First_Char(Header):
+        
+        def __init__(self, ws):
+            Header.__init__(self, ws, "header_first_char")
 
-        # For each header and its index
-        for idx, header in enumerate(headers):
-
-            # If the header is valid
-            if self.is_valid(header):
-
-                # Go on to the next one
-                continue
+        def validate(self, upper_left_corner, multi_table):
+            if multi_table.multi_table:
+                self.handle_multi_table()
             else:
+                self.check_first_char(upper_left_corner)
 
-                # Set issue to header_location: invalid header
-                self.issues[idx + first_col_idx] = header
+        def check_first_char(self, upper_left_corner):
+            headers = self.get_headers(upper_left_corner)
 
-        # Finish off setting messages and status
-        Test.validate(self,
-            "Headers are not acceptable",
-            "Headers meet expectations"
-        )
+            # Iterate over headers
+            for idx, header in enumerate(headers):
 
-    # Check if the header is valid
-    def is_valid(self, header):
+                assert isinstance(header, str)
 
-        # Check if the header is a string
-        # Other types, including NA, are not allowed.
-        validity = isinstance(header, str)
+                # If bad length
+                if header[0].isdigit():
+                    self.issues[(idx, header)] = "Header starts with digit"
 
-        # Length greater than or equal to 3 and less than or equal to 12
-        validity = validity and (len(header) >= 3 and len(header) <= 12)
+            Test.validate(self, "Some headers start with a digit", "No headers start with digits")
+                
 
-        # First character is not a digit
-        validity = validity and not header[0].isdigit()
 
-        # No spaces in header
-        validity = validity and not (" " in header)
+class Header_Space(Header):
+        
+        def __init__(self, ws):
+            Header.__init__(self, ws, "header_space")
 
-        # Return result
-        return validity
+        def validate(self, upper_left_corner, multi_table):
+            if multi_table.multi_table:
+                self.handle_multi_table()
+            else:
+                self.check_space(upper_left_corner)
+
+        def check_space(self, upper_left_corner):
+            headers = self.get_headers(upper_left_corner)
+
+            
+            # Iterate over headers
+            for idx, header in enumerate(headers):
+
+                assert isinstance(header, str)
+
+                # If bad length
+                if " " in header:
+                    self.issues[(idx, header)] = "Header has a space"
+                
+
+            Test.validate(self, "Some headers have spaces", "No headers have spaces")
+                
+
 
 # Look for special characters in the cells
 class Special_Char(Test, By_Cell):
@@ -630,13 +1019,105 @@ class Untrimmed_White_Space(Test, By_Cell):
             # The cell had leading or trailing white space
             return True
 
-# Search for cells containing only question marks
-class Question_Marks(Test, By_Cell):
+class Newlines_Tabs(Test, By_Cell):
     def __init__(self, ws):
-        Test.__init__(self, ws, "question_marks")
+        Test.__init__(self, ws, "newlines_tabs")
 
     def validate(self):
-        By_Cell.validate(self, "Question marks found", "No question marks found")
+
+        # Use default validate method for By_Cell
+        By_Cell.validate(self,
+            "Newlines, tabs, or vertical tabs found.",
+            "No newlines, tabs, or vertical tabs found.")
+        
+    # Required by By_Cell
+    def not_valid(self, cell):
+
+        # Check if the cell is a string
+        if not isinstance(cell, str):
+            # This test does not apply
+            return False
+        
+        # This regex matches newlines, tabs, and vertical tabs anywhere
+        # bad_space is a list of all the matches
+        bad_space = re.findall(r'[\t\n\v]', cell)
+
+        # If there are no newlines... etc
+        if len(bad_space)==0:
+            return False
+        else:
+            # The cell had newlines
+            return True
+
+# Needs to be redone as an analytic instead of a test
+
+# class Quotes(Test, By_Cell):
+#     def __init__(self, ws):
+#         Test.__init__(self, ws, "quotes")
+
+#     def validate(self):
+
+#         # Use default validate method for By_Cell
+#         By_Cell.validate(self,
+#             "Quotes or double quotes found.",
+#             "No quotes or double quotes found.")
+        
+#     # Required by By_Cell
+#     def not_valid(self, cell):
+
+#         # Check if the cell is a string
+#         if not isinstance(cell, str):
+#             # This test does not apply
+#             return False
+        
+#         # This regex matches single and double quotes around comma or a tab
+#         # bad_space is a list of all the matches
+#         delimiters_in_cells = re.findall(r'[\'\"][,\t][\'\"]')
+
+#         # If there are no newlines... etc
+#         if len(delimiters_in_cells)==0:
+#             return False
+#         else:
+#             # The cell had newlines
+#             return True
+
+class Missing_Value_Text(Test, By_Cell):
+    def __init__(self, ws):
+        Test.__init__(self, ws, "missing_value_text")
+
+    def validate(self):
+
+        # Use default validate method for By_Cell
+        By_Cell.validate(self,
+            "Text denoting missing values found.",
+            "No text denoting missing values found.")
+        
+    # Required by By_Cell
+    def not_valid(self, cell):
+
+        # Check if the cell is a string
+        if not isinstance(cell, str):
+            # This test does not apply
+            return False
+        
+        # This regex matches newlines, tabs, and vertical tabs anywhere
+        # bad is a list of all the matches
+        bad = re.findall(r'^(?:(no data)|(nd)|(missing)|(missing data)|(na)|(null))$', cell, flags = re.IGNORECASE)
+
+        # If there are matches
+        if len(bad)==0:
+            return False
+        else:
+            # The cell had missing data text
+            return True
+
+# Search for cells containing only question marks
+class Question_Mark_Only(Test, By_Cell):
+    def __init__(self, ws):
+        Test.__init__(self, ws, "question_mark_only")
+
+    def validate(self):
+        By_Cell.validate(self, "Cells with just a question mark found", "No question mark cells found")
     
     def not_valid(self, cell):
         
@@ -668,6 +1149,30 @@ class White_Space_Only(Test, By_Cell):
         else:
             return True
 
+class Number_Space(Test, By_Cell):
+    def __init__(self, ws):
+        Test.__init__(self, ws, "white_space_only")
+
+    def validate(self):
+        By_Cell.validate(self, "Cells with only spaces and numbers found", "No cells with only spaces and numbers found")
+    
+    def not_valid(self, cell):
+        
+        # Check if the cell is a string
+        if not isinstance(cell, str):
+            # This test does not apply
+            return False
+        
+        # Matches cells with at least one number and at least one spacer
+        # but no other character type
+        bad_match = re.findall(r'^(?=.*\d)(?=.*\s)[\d\s]+$', cell)
+        if len(bad_match) == 0:
+            return False
+        else:
+            return True
+
+
+
 class Dates(Test, By_Cell):
     def __init__(self, ws):
         Test.__init__(self, ws, "dates")
@@ -684,7 +1189,7 @@ class Dates(Test, By_Cell):
         ratio_dates = parsed_dates.apply(lambda s: s.notna().mean())
 
         # Select the columns with more than 80% valid dates
-        # Retrieve the these columns names
+        # Retrieve these columns names
         date_cols = ratio_dates[ratio_dates > 0.8].index
         
         # Select the columns from the full dataframe with dates
@@ -707,6 +1212,33 @@ class Dates(Test, By_Cell):
         if cell_date == None:
             return False
         else:
+            return True
+
+
+class Scientific_Notation(Test, By_Cell):
+    # This test fails for "small" exponents like 1e-3
+    # Because pandas reads these as floats automatically
+    def __init__(self, ws):
+        Test.__init__(self, ws, "scientific_notation")
+
+    def validate(self):
+        By_Cell.validate(self, "Cells with scientific notation found", "No cells with scientific notation found")
+    
+    def not_valid(self, cell):
+        
+        # Check if the cell is a string
+        if not isinstance(cell, str):
+            # This test does not apply
+            return False
+        
+        # This regex matches any number in scientific notation
+        sci_notation = re.fullmatch(r'^[+-]?\d+(?:\.\d+)?[eE][+-]?\d+$', cell.strip())
+
+        # If the cell is not in scientific notation, return False
+        if sci_notation == None:
+            return False
+        else:
+            # The cell is in scientific notation
             return True
 
 # If run as a script

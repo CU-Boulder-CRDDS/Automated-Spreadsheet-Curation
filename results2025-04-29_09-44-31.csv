@@ -1,7 +1,0 @@
-path,sheet,test_name,message,issues
-demo.xlsx,extra_space,grid_edges,Table is not in the upper left corner,"{'first_col_idx': 2, 'first_row_idx': 1}"
-demo.xlsx,headers,headers,Headers are not acceptable,"{0: 'This_header_is_too_long', 1: 'xx', 2: '3starts_number', 3: 'has space', 6: 'Unnamed: 6'}"
-demo.xlsx,special,special_characters,Special characters found,"{(0, (0, 'header1')): 'bad!', (0, (1, 'header2')): 'try&again', (1, (0, 'header1')): 'n@ope', (1, (1, 'header2')): 'still*no', (2, (0, 'header1')): 'sorry%', (2, (1, 'header2')): '(fail', (3, (0, 'header1')): 'uh#uh', (3, (1, 'header2')): 'wron)g', (4, (1, 'header2')): 'ne/ver'}"
-demo.xlsx,special,white_space,Leading or trailing white space found,"{(4, (0, 'header1')): 'space ', (5, (0, 'header1')): ' space'}"
-demo.xlsx,comment_col,special_characters,Special characters found,"{(0, (0, 'header1')): 'bad!', (0, (1, 'header2')): 'try&again', (1, (0, 'header1')): 'n@ope', (1, (1, 'header2')): 'still*no', (2, (0, 'header1')): 'sorry%', (2, (1, 'header2')): '(fail', (3, (0, 'header1')): 'uh#uh', (3, (1, 'header2')): 'wron)g', (4, (1, 'header2')): 'ne/ver'}"
-demo.xlsx,comment_col,white_space,Leading or trailing white space found,"{(4, (0, 'header1')): 'space ', (5, (0, 'header1')): ' space'}"
