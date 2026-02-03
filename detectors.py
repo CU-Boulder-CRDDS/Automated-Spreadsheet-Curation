@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod # Creating abstract classes
 import re # Regular expressions to test cell contents
 import json # Saving results to json
 from datetime import datetime as dt # Add timestamps to the results
+import os # Operating system operations
 
 class Test_Suite():
     __slots__ = ["wb_path", "wb", "to_run", "results"]
@@ -17,14 +18,46 @@ class Test_Suite():
     def __init__(self, wb_path, to_run = None):
         self.wb_path = wb_path
 
-        # Assumes the input is excel (many versions supported)
-        # Will need to add checks for other file types
-        self.wb = pd.read_excel(
-            io = wb_path, # The file path
-            dtype = "str", # Parse all cells as strings, leaves the parsing to the tests
-            sheet_name = None, # read all sheets returning a dict
-            header = None # Do not load the header at all
-        )
+        # Initialize the results dict,
+        # levels:  [sheet_name] -> [test_name] -> [test_object]
+        self.results = dict()
+        # Initialize the results dict for the file
+        self.results["file"] = dict()
+
+        # First check if the file is UTF-8 encoded
+        encoding_test = File_Encoding(ws = None, wb_path = wb_path)
+        encoding_test.validate()
+        self.results["file"]["file_encoding"] = encoding_test
+
+
+        # Extract file extension from wb_path
+        file_extension = os.path.splitext(wb_path)[1]
+
+
+        # If the file extension is .xlsx, read the file as an excel file
+        if file_extension == ".xlsx":
+            self.wb = pd.read_excel(
+                io = wb_path, # The file path
+                dtype = "str", # Parse all cells as strings, leaves the parsing to the tests
+                sheet_name = None, # read all sheets returning a dict
+                header = None, # Do not load the header at all
+            )
+        elif file_extension == ".csv":
+            self.wb = pd.read_csv(
+                wb_path, # The file path
+                sep = None, # Automatically detect the separator
+                dtype = "str", # Parse all cells as strings, leaves the parsing to the tests
+                header = None, # Do not load the header at all
+                na_values = "", # Treat only empty cells as NA
+                keep_default_na = False, # Do not keep default NA values
+                encoding = "utf-8", # Read the file as UTF-8 encoded
+                encoding_errors = "replace", # Replace invalid characters with ?
+            )
+            # Make  the single sheet into a singleton dict
+            self.wb = {os.path.splitext(os.path.basename(wb_path))[0]: self.wb}
+        else:
+            raise ValueError("Invalid file extension. Use '.xlsx' or '.csv'.")
+
 
         # Set the first row to be headers no matter what
         def set_headers(df):
@@ -55,13 +88,11 @@ class Test_Suite():
 
         # If no tests are provided, run all tests
         if to_run == None:
-            self.to_run = [Upper_Left_Corner, Multi_Table, Mixed_Datatypes, Header_Duplicates, Header_Length, Header_First_Char, Header_Space, Special_Char, Untrimmed_White_Space, Newlines_Tabs, Missing_Value_Text, Question_Mark_Only, White_Space_Only, Number_Space, Dates, Scientific_Notation]
+            self.to_run = [Upper_Left_Corner, Multi_Table, Mixed_Datatypes, Header_Duplicates, Header_Length, Header_First_Char, Header_Space, Header_Word_Separation, Header_Special_Characters, Header_ID, Header_Date, Special_Char, Untrimmed_White_Space, Newlines_Tabs, Missing_Value_Text, Question_Mark_Only, White_Space_Only, Number_Space, Dates, Scientific_Notation]
         else:
             self.to_run = to_run
 
-        # Initialize the results dict,
-        # levels:  [sheet_name] -> [test_name] -> [test_object]
-        self.results = dict()
+
 
 
 
@@ -69,17 +100,14 @@ class Test_Suite():
     def run(self):
         # Run tests on the file as a whole
 
-        # Initialize the results dict for the file
-        self.results["file"] = dict()
 
-        # Initialize the filename test
-        filename_test = Filename(self.wb, self.wb_path)
+        filename_tests = [Filename_Length, Filename_Whitespace, Filename_Final, Filename_Word_Separation, Filename_Special_Characters]
 
-        # Validate the filename test
-        filename_test.validate()
+        for test in filename_tests:
+            one_test = test(self.wb, self.wb_path)
+            one_test.validate()
+            self.results["file"][one_test.name] = one_test
 
-        # Update the results dict with the filename test
-        self.results["file"]["filename"] = filename_test
 
 
         # For each sheet in the workbook
@@ -239,54 +267,59 @@ class Test_Suite():
         return trimmed_results
 
     # Save the results to a file
-    def save(self, format = "json"):
+    def save(self, format="json", filename=None):
+        import os
+        from datetime import datetime as dt
+        import json
+        print("saving results to file")
 
-        # If the requested format is json
+        # By default, use "results/" as the folder
+        results_folder = "results"
+        if not os.path.exists(results_folder):
+            os.makedirs(results_folder)
+
+        # Get the base name of the file from wb_path (without folders)
+        base_name = os.path.splitext(os.path.basename(self.wb_path))[0]
+        # Add datetime and format to the output filename
+        timestamp = dt.now().strftime("%Y-%m-%d_%H-%M-%S")
+        default_filename = f"{base_name}_{timestamp}.{format}"
+
+        # Full path to output file
+        if filename is None:
+            filename = os.path.join(results_folder, default_filename)
+
         if format == "json":
-
-            # Open a json file for writing
-            with open(
-                f"results{dt.now().strftime("%Y-%m-%d_%H-%M-%S")}.json", "w") as f:
-
-                # Dump the trimmed results to the file
-                json.dump(self.trimmed_results(stringify=True), f, default = str)
-
-        # If the requested format is csv
+            with open(filename, "w") as f:
+                json.dump(self.trimmed_results(stringify=True), f, default=str)
         elif format == "csv":
 
-            # Initialize a dataframe to contain the results
-            df = pd.DataFrame(
-                data = {
-                    "path":[],
-                    "sheet":[],
-                    "test_name":[],
-                    "message":[],
-                    "issues":[]
-                }
-            )
-            
+            rows = []
             # For each sheet and its associated tests
             for sheet, tests in self.trimmed_results().items():
-
-                # Make a dataframe of the test results in long form
-                df_sheet = pd.DataFrame(
-                    data = {
-                        "path":[self.wb_path for _ in range(len(tests))],
-                        "sheet":[sheet for _ in range(len(tests))],
-                        "test_name":[test_name for test_name in tests.keys()],
-                        "message":[test["message"] for test in tests.values()],
-                        "issues":[test["issues"] for test in tests.values()]
-                    }
-                )
-                
-                # Append the test results to the dataframe
-                df = pd.concat([df, df_sheet], ignore_index=True)
-
-            # Save the dataframe to a csv file.
-            df.to_csv(
-                f"results{dt.now().strftime("%Y-%m-%d_%H-%M-%S")}.csv", mode = "w", index = False, header = True)
-
-        # If the requested format is neither json nor csv
+                for test_name, test in tests.items():
+                    issues = test["issues"]
+                    if not issues:
+                        # If no issues, optionally still record a "pass"/empty row
+                        continue
+                    row_count = len(issues)
+                    # Prepare repeated/columnar values
+                    paths     = [self.wb_path] * row_count
+                    sheets    = [sheet] * row_count
+                    test_names= [test_name] * row_count
+                    messages  = [test["message"]] * row_count
+                    locations, examples = zip(*issues.items())
+                    for i in range(row_count):
+                        rows.append({
+                            "path": paths[i],
+                            "sheet": sheets[i],
+                            "test_name": test_names[i],
+                            "message": messages[i],
+                            "location": locations[i],
+                            "example": examples[i]
+                        })
+            import pandas as pd  # ensure pd is imported
+            df = pd.DataFrame(rows, columns=["path", "sheet", "test_name", "message", "location", "example"])
+            df.to_csv(filename, mode="w", index=False, header=True)
         else:
             # Raise a ValueError
             raise ValueError("Invalid format. Use 'json' or 'csv'.")
@@ -346,6 +379,12 @@ class Test(ABC):
     # This method is not currently used anywhere
     def report(self):
         print(f"name: {self.name}\nstatus: {self.status}\nmessage: {self.message}\nissues: {self.issues}")
+
+    def handle_multi_table(self):
+        Test.validate(
+            self,
+            None,
+            "Cannot assess test if multiple tables are present.  Pass by default")
 
 
 
@@ -484,63 +523,166 @@ class Worksheet_Name(Test):
 
 
 class Filename(Test):
-    def __init__(self, ws, wb_path):
+    def __init__(self, ws, wb_path, test_name):
         # Save the workbook path
         self.wb_path = wb_path
+        # Save the filename
+        self.filename = os.path.basename(self.wb_path)
 
-        # Initialize the test named filename
-        Test.__init__(self, ws, "filename")
+        # Initialize the test named test_name
+        Test.__init__(self, ws, test_name)
+    
+    def validate(self):
+        pass
+
+        
+class Filename_Length(Filename):
+    def __init__(self, ws, wb_path):
+        # Initialize the test named filename_length
+        Filename.__init__(self, ws, wb_path, "filename_length")
 
     def validate(self):
 
-        if len(self.wb_path) > 200:
+        # If length is greater than 200
+        if len(self.filename) > 200:
+            # The test failed
             self.status = False
+            # Add an issue "location = filename": "contents of filename"
+            self.issues["filename"] = self.filename
+            # Set message
+            self.message = "Filename is > 200 characters"
+        else:
+            # The test passed
+            self.status = True
+            # Set message
+            self.message = "Filename is <= 200 characters"
 
-            self.issues = {"length >200": len(self.wb_path)}
-        
-        if "final" in self.wb_path.lower():
-            self.status = False
 
-            self.issues["contains 'final'"] = self.wb_path
-        
-        # Detect if both _ and - are in filename
-        if "_" in self.wb_path and "-" in self.wb_path:
-            
+class Filename_Whitespace(Filename):
+    def __init__(self, ws, wb_path):
+        # Initialize the test named filename_whitespace
+        Filename.__init__(self, ws, wb_path, "filename_whitespace")
+
+    def validate(self):
+
+        # detect whitespace in filename
+        # search returns None if no match is found, else Match object
+        if re.search(r"\s", self.filename) is not None:
+
             # The test failed
             self.status = False
 
             # Add an issue
-            self.issues["contains both _ and -"] = self.wb_path
+            self.issues["filename"] = self.filename
+
+class Filename_Final(Filename):
+    def __init__(self, ws, wb_path):
+        # Initialize the test named filename_final
+        Filename.__init__(self, ws, wb_path, "filename_final")
+
+    def validate(self):
+
+        # If filename contains 'final'
+        if "final" in self.filename.lower():
+            self.status = False
+
+            self.issues["filename"] = self.filename
+
+            self.message = "Filename contains 'final'"
+        else:
+            self.status = True
+            self.message = "Filename does not contain 'final'"
+    
+class Filename_Word_Separation(Filename):
+    def __init__(self, ws, wb_path):
+        # Initialize the test named filename_word_separation
+        Filename.__init__(self, ws, wb_path, "filename_word_separation")
+
+    def validate(self):
+
+        # Detect combo of camel case, underscore, and dash in filename
+        # Expressions work even if there are whitespace in the filename
+        # camel case: captial letters in the middle of words
+        camel_case = re.search(r'[a-z][A-Z]', self.filename) is not None
+        underscore = "_" in self.filename
+        dash = "-" in self.filename
+
+        # If more than one are true
+        if sum([camel_case, underscore, dash]) > 1:
+            self.status = False
+            self.issues["filename"] = self.filename
+            self.message = "Filename mixes camel case, underscores, and dashes"
+        else:
+            self.status = True
+            self.message = "Filename does not mix camel case, underscores, and dashes"
+        
+class Filename_Special_Characters(Filename):
+    def __init__(self, ws, wb_path):
+        # Initialize the test named filename_special_characters
+        Filename.__init__(self, ws, wb_path, "filename_special_characters")
+
+    def validate(self):
 
         # detect special characters in filename
-        spec_char = re.search(r"[!@#$%^&*()+=\[\]{};:'\"|\\,<>\?/]", self.wb_path)
-
-        # If there were special chars
+        spec_char = re.search(r"[!@#$%^&*()+=\[\]{};:'\"|\\,<>\?/]", self.filename)
+        
+        # If there was a special character
         if spec_char:
             # The test failed
             self.status = False
 
-            # Add an issu
-            self.issues["contains special characters"] = spec_char.group(0)
-        
-        # detect whitespace in filename
-        if re.search(r"\s", self.wb_path):
-
-            # The test failed
-            self.status = False
-
             # Add an issue
-            self.issues["contains whitespace"] = self.wb_path
+            self.issues["filename"] = spec_char.group(0)
 
-        if  self.status is None:
-            # The test passed
-            self.status = True
-
-            # Set the message
-            self.message = "Filename is acceptable"
+            self.message = "Filename contains special characters"
         else:
-            self.message = "Filename is not acceptable"
+            self.status = True
+            self.message = "Filename does not contain special characters"
+        
 
+class File_Encoding(Test):
+    def __init__(self, ws, wb_path):
+        # Save the workbook path
+        self.wb_path = wb_path
+        # Initialize the test named file_encoding
+        Test.__init__(self, ws, "file_encoding")
+    
+    def validate(self):
+        # Extract file extension
+        file_extension = os.path.splitext(self.wb_path)[1].lower()
+        
+        # Only check encoding for text-based files (CSV, not Excel)
+        if file_extension == ".xlsx" or file_extension == ".xls":
+            # Excel files are binary ZIP archives, encoding check doesn't apply
+            self.status = True
+            self.message = "Encoding check skipped for Excel files (binary format)"
+            self.is_run = True
+            return
+        
+        # For CSV and other text files, check UTF-8 encoding
+        try:
+            with open(self.wb_path, 'rb') as f:
+                # Read the file content
+                content = f.read()
+                # Try to decode as UTF-8
+                content.decode('utf-8')
+            
+            # If decoding succeeds, the test passed
+            self.status = True
+            self.message = "File encoding is UTF-8"
+        except UnicodeDecodeError:
+            # If decoding fails, the test failed
+            self.status = False
+            self.issues["file"] = "File encoding is not UTF-8"
+            self.message = "File encoding is not UTF-8"
+        except Exception as e:
+            # Handle other exceptions (e.g., file not found)
+            self.status = False
+            self.issues["file"] = f"Error reading file: {str(e)}"
+            self.message = f"Error checking file encoding: {str(e)}"
+        
+        # Mark the test as run
+        self.is_run = True
 
 
 # Check that the table is in the upper left corner
@@ -714,97 +856,6 @@ class Multi_Table(Test, Has_Dependency):
             "Sheet does not have multiple tables")
 
 
-class Mixed_Datatypes(Test, Has_Dependency):
-
-    def __init__(self, ws):
-
-        # Initialize the test named mixed_datatypes
-        Test.__init__(self, ws, "mixed_datatypes")
-
-        # Needs to know if multiple tables are present
-        Has_Dependency.__init__(self, Multi_Table, Upper_Left_Corner)
-
-    def validate(self, multi_table, upper_left_corner):
-
-        # If there are multiple tables on this sheet
-        if multi_table.multi_table:
-            # Pass by default
-            Test.validate(self, None, "Multiple tables, cannot run test.  Pass by default.")    
-        
-        # Else there's a single table, run test
-        else:
-            # In case not in upper left corner, retrieve effective table
-            ws = upper_left_corner.effective_ws
-
-            n_rows, n_cols = ws.shape
-
-            # For each column in the worksheet
-
-            for col_idx, col_name in enumerate(ws.columns):
-
-                types_found = dict()
-
-                # Get the column data
-
-                col_data = ws.iloc[:,col_idx]
-
-                # Remove values that are missing to begin with
-
-                col_data = col_data[col_data.notna()]
-
-                # Attempt to convert the column to general numeric
-
-                col_float = pd.to_numeric(col_data, errors='coerce')
-
-                # Compute the number of rows that are possibly numeric
-
-                n_numeric = col_float.notna().sum()
-
-                # If there are any numeric rows
-
-                if n_numeric > 0:
-
-                    # Record the number of numeric entries
-
-                    types_found["numeric"] = int(n_numeric)
-
-                # Attempt to convert the column to datetime in any iso format
-                col_datetime = pd.to_datetime(col_data, errors='coerce', format = "ISO8601")
-
-                # Compute number of datetimes
-                n_datetime = col_datetime.notna().sum()
-
-                # If there are any dates
-                if n_datetime > 0:
-
-                    types_found["datetime"] = int(n_datetime)
-
-
-                # Compute number of missing data
-                n_missing = col_data.isna().sum()
-
-                # If it's not anything else, it must be text
-                n_text = n_rows - n_numeric - n_datetime - n_missing
-
-                # If there's any text
-                if n_text > 0:
-                    types_found["text"] = int(n_text)
-
-                    # Loop to the next column
-                    # Report each column containing multiple types
-                    # Loop over the columns
-
-                # If there are multiple types
-                if len(types_found.keys()) > 1:
-
-                    # Add to issues
-                    self.issues[col_name] = types_found
-
-                Test.validate(self,
-                    "Table contains columns with mixed data types",
-                    "Table columns each contains one datatype"
-                )
-
         
 class Header(Test, Has_Dependency):
 
@@ -822,10 +873,6 @@ class Header(Test, Has_Dependency):
 
         return upper_left_corner.effective_ws.columns
     
-    def handle_multi_table(self):
-        Test.validate(self,
-                        None,
-                        "Cannot assess headers if multiple tables are present.  Pass by default")
         
 
 
@@ -865,7 +912,26 @@ class Header_Duplicates(Header):
 
         Test.validate(self, "Duplicate headers found", "All headers unique")
 
-    
+
+class Header_ID(Header):
+
+    def __init__(self, ws):
+        Header.__init__(self, ws, "header_id")
+
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_id(upper_left_corner)
+
+    def check_id(self, upper_left_corner):
+        headers = self.get_headers(upper_left_corner)
+        # Iterate over headers
+        if headers[0] == "ID":
+            self.issues[(0, headers[0])] = "First header is ID"
+
+        Test.validate(self, "First header is ID", "First header is not ID")
+
 class Header_Length(Header):
         
         def __init__(self, ws):
@@ -891,8 +957,8 @@ class Header_Length(Header):
                 if len(header) <=3:
                     self.issues[(idx, header)] = "Header is less than 4 characters"
                 
-                if len(header) > 12:
-                    self.issues[(idx, header)] = "Header is more than 12 characters"
+                if len(header) > 24:
+                    self.issues[(idx, header)] = "Header is more than 24 characters"
 
             Test.validate(self, "Some headers have improper lengths", "All headers have acceptable lengths")
                 
@@ -952,8 +1018,221 @@ class Header_Space(Header):
 
             Test.validate(self, "Some headers have spaces", "No headers have spaces")
                 
+class Header_Word_Separation(Header):
+
+    def __init__(self, ws):
+        Header.__init__(self, ws, "header_word_separation")
+
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_underscore_dash(upper_left_corner)
+
+    def check_underscore_dash(self, upper_left_corner):
+        headers = self.get_headers(upper_left_corner)
+        # Iterate over headers
 
 
+        for idx, header in enumerate(headers):
+            assert isinstance(header, str)
+
+            # Detect captial letters in the middle of words
+            camel_case = re.search(r'[a-z][A-Z]', header) is not None
+            underscore =  "_" in header
+            dash = "-" in header
+
+        if sum([camel_case, underscore, dash]) > 1:
+            self.issues[tuple(headers)] = "Headers mix camel case, underscores, and dashes"
+
+            
+        Test.validate(self, "Headers use mixture of camel case, underscores, and dashes", "Headers do not use a mixture of camel case, underscores and dashes")
+
+
+class Header_Special_Characters(Header):
+    def __init__(self, ws):
+        Header.__init__(self, ws, "header_special_characters")
+
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_special_characters(upper_left_corner)
+
+    def check_special_characters(self, upper_left_corner):
+        headers = self.get_headers(upper_left_corner)
+        # Iterate over headers
+        for idx, header in enumerate(headers):
+            assert isinstance(header, str)
+            if re.search(r"[!@#$%^&*()+=\[\]{};:'\"|\\,<>\?/]", header):
+                self.issues[(idx, header)] = "Header contains special characters"
+
+        Test.validate(self, "Headers contain special characters", "Headers do not contain special characters")
+
+class Header_Date(Header):
+    def __init__(self, ws):
+        Header.__init__(self, ws, "header_date")
+
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_date(upper_left_corner)
+
+    def check_date(self, upper_left_corner):
+        headers = self.get_headers(upper_left_corner)
+        # Iterate over headers
+        for idx, header in enumerate(headers):
+            assert isinstance(header, str)
+            if "date" in header.lower():
+                self.issues[(idx, header)] = "Column may combine YYYY-MM-DD in one column instead of breaking up"
+
+        Test.validate(self, "Column may combine YYYY-MM-DD in one column instead of breaking up", "Column does not combine YYYY-MM-DD in one column")
+
+
+class Mixed_Datatypes(Test, Has_Dependency):
+
+    def __init__(self, ws):
+
+        # Initialize the test named mixed_datatypes
+        Test.__init__(self, ws, "mixed_datatypes")
+
+        # Needs to know if multiple tables are present
+        Has_Dependency.__init__(self, Multi_Table, Upper_Left_Corner)
+
+    def validate(self, multi_table, upper_left_corner):
+
+        # If there are multiple tables on this sheet
+        if multi_table.multi_table:
+            # Pass by default
+            Test.validate(self, None, "Multiple tables, cannot run test.  Pass by default.")    
+        
+        # Else there's a single table, run test
+        else:
+            # In case not in upper left corner, retrieve effective table
+            ws = upper_left_corner.effective_ws
+
+            n_rows, n_cols = ws.shape
+
+            # For each column in the worksheet
+
+            for col_idx, col_name in enumerate(ws.columns):
+
+                types_found = dict()
+
+                # Get the column data
+
+                col_data = ws.iloc[:,col_idx]
+
+                # Remove values that are missing to begin with
+
+                col_data = col_data[col_data.notna()]
+
+                # Attempt to convert the column to general numeric
+
+                col_float = pd.to_numeric(col_data, errors='coerce')
+
+                # Compute the number of rows that are possibly numeric
+
+                n_numeric = col_float.notna().sum()
+
+                # If there are any numeric rows
+
+                if n_numeric > 0:
+
+                    # Record the number of numeric entries
+
+                    types_found["numeric"] = int(n_numeric)
+
+                # # Attempt to convert the column to datetime in any iso format
+                # col_datetime = pd.to_datetime(col_data, errors='coerce', format = "ISO8601")
+
+                # # Compute number of datetimes
+                # n_datetime = col_datetime.notna().sum()
+
+                # # If there are any dates
+                # if n_datetime > 0:
+
+                #     types_found["datetime"] = int(n_datetime)
+
+
+                # Compute number of missing data
+                n_missing = col_data.isna().sum()
+
+                # If it's not anything else, it must be text
+                n_text = n_rows - n_numeric - n_missing
+
+                # If there's any text
+                if n_text > 0:
+                    types_found["text"] = int(n_text)
+
+                    # Loop to the next column
+                    # Report each column containing multiple types
+                    # Loop over the columns
+
+                # If there are multiple types
+                if len(types_found.keys()) > 1:
+
+                    # Add to issues
+                    self.issues[col_name] = types_found
+
+                Test.validate(self,
+                    "Table contains columns with mixed data types",
+                    "Table columns each contains one datatype"
+                )
+
+class Aggregate_Row(Test, Has_Dependency):
+
+    def __init__(self, ws):
+        Test.__init__(self, ws, "aggregate_row")
+        Has_Dependency.__init__(self, Multi_Table, Upper_Left_Corner)
+
+    def validate(self, multi_table, upper_left_corner):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_aggregate_row(upper_left_corner)
+
+    def check_aggregate_row(self, upper_left_corner):
+        ws = upper_left_corner.effective_ws
+
+        # Get the last row
+        last_row = ws.iloc[-1]
+
+        # Search for the words aggregating words
+        # List of indices of cells that contain aggregate words
+        agg_word_idx = []
+        # Regex to search: "total", "sum", "average", "count", "min", "max" 
+        regex =r"(total|sum|average|count|min|max)"
+        # Iterate over the cells in the last row
+        for idx, cell_contents in enumerate(last_row):
+            # If the cell contents is a string
+            if isinstance(cell_contents, str):
+                # If the cell contents contains an aggregate word
+                if re.search(regex, cell_contents, flags = re.IGNORECASE):
+                    # Note its index
+                    agg_word_idx.append(idx)
+        
+        # Assume no aggregate words
+        is_aggregate_row = False
+        # For each aggregate word index
+        for idx in agg_word_idx:
+            # If the cell immediately to the right is a number
+            if isinstance(last_row.iloc[idx + 1], (int, float)):
+                # This is probably a true aggregate row
+                is_aggregate_row = True
+        
+        # If it is an aggregate row
+        if is_aggregate_row:
+            # Add issues for each aggregate word
+            for idx in agg_word_idx:
+                row_idx = ws.index[-1]
+                col = ws.columns[agg_word_idx[idx]]
+                col_idx = agg_word_idx[idx]
+                self.issues[row_idx, (col_idx, col)] = (last_row[idx], last_row[idx + 1])
+        
+        Test.validate(self, "Last row contains aggregate words", "Last row does not contain aggregate words")
+        
 # Look for special characters in the cells
 class Special_Char(Test, By_Cell):
 
@@ -1102,7 +1381,7 @@ class Missing_Value_Text(Test, By_Cell):
         
         # This regex matches newlines, tabs, and vertical tabs anywhere
         # bad is a list of all the matches
-        bad = re.findall(r'^(?:(no data)|(nd)|(missing)|(missing data)|(na)|(null))$', cell, flags = re.IGNORECASE)
+        bad = re.findall(r'^(?:(no data)|(nd)|(missing)|(missing data)|(na)|(null)|(\-)|(\.)|(\s+)|(+_))$', cell, flags = re.IGNORECASE)
 
         # If there are matches
         if len(bad)==0:
@@ -1240,6 +1519,43 @@ class Scientific_Notation(Test, By_Cell):
         else:
             # The cell is in scientific notation
             return True
+
+
+
+
+class Units(Test, By_Cell, Has_Dependency):
+    # This test looks for units in the cells
+    def __init__(self, ws):
+        Test.__init__(self, ws, "units")
+        Has_Dependency.__init__(self, Upper_Left_Corner)
+
+    def validate(self, upper_left_corner):
+        # Check that the grid edges test has been run
+        self.check_input(upper_left_corner)
+
+        By_Cell.validate(self, "Cells with units found", "No cells with units found", upper_left_corner.effective_ws)
+    
+    def not_valid(self, cell):
+        
+        # Check if the cell is a stringc
+        if not isinstance(cell, str):
+            # This test does not apply
+            return False
+        
+        # This regex matches any number with a unit suffix
+        units = r'^[+-]?[\d\.]+(nm)|(um)|(mm)|(cm)|(m)|(km)|(in)|(ft)|(yd)|(mi)|(lb)|(oz)|(g)|(kg)|(mg)|(ug)|(ng)|(pg)|(ml)|(l)|(cl)|(ul)|(mmHg)|(inHg)|(psi)|(bar)|(atm)|(torr)|(s)|(ns)|(us)|(ms)|(hr)|(min)|(days)|(weeks)|(years)|(ml)|(dl)|(l)|(liters)|(gal)|(dbl)$'
+
+        matches = re.fullmatch(units, cell.strip())
+
+        # If the cell has no units, return False
+        if units == None:
+            return False
+        else:
+            # The cell has units
+            return True
+
+
+
 
 # If run as a script
 if __name__ == "__main__":
