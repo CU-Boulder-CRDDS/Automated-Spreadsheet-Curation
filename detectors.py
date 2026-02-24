@@ -7,16 +7,97 @@ import json # Saving results to json
 from datetime import datetime as dt # Add timestamps to the results
 import os # Operating system operations
 
+# -----------------------------------------------------------------------------
+# Configuration: defaults, load/merge, and shared accessor for tests
+#
+# Config is a JSON object keyed by test name. Pass config_path to Test_Suite
+# to override defaults. Schema (for UI and users):
+#
+#   special_characters:
+#     bad_chars_regex (str): regex character class of disallowed chars.
+#     exceptions (list of str): "url" = allow URL-like cells; "free_text" = use
+#       free_text_columns to allow common punctuation in those columns.
+#     free_text_columns (list): column names or 0-based indices to treat as free text.
+#   aggregate_row:
+#     aggregate_words (list of str): words that indicate an aggregate row.
+#   dates:
+#     required_format (str): "ISO8601" = flag non-ISO dates; "any" = do not flag.
+#     date_column_ratio_threshold (float): min ratio of parseable dates to treat column as date column (0–1).
+#     pandas_format (str): passed to pd.to_datetime(..., format=...) e.g. "mixed".
+# -----------------------------------------------------------------------------
+
+def _default_config():
+    """In-code defaults for all configurable tests. User JSON is deep-merged over this."""
+    return {
+        "special_characters": {
+            "bad_chars_regex": r"[!@#$%&*(){}|<>/]",
+            "exceptions": [],
+            "free_text_columns": [],
+        },
+        "aggregate_row": {
+            "aggregate_words": ["total", "sum", "average", "count", "min", "max"],
+        },
+        "dates": {
+            "required_format": "ISO8601",
+            "date_column_ratio_threshold": 0.8,
+            "pandas_format": "mixed",
+        },
+    }
+
+
+def _deep_merge(base, override):
+    """Recursively merge override into base. Mutates base. Returns base."""
+    for key, value in override.items():
+        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
+            _deep_merge(base[key], value)
+        else:
+            base[key] = value
+    return base
+
+
+def load_config(config_path=None):
+    """
+    Load config: start from in-code defaults, then deep-merge optional JSON file.
+    Returns the merged config dict.
+    """
+    config = _default_config()
+    if config_path is not None and os.path.isfile(config_path):
+        with open(config_path, "r", encoding="utf-8") as f:
+            user = json.load(f)
+        _deep_merge(config, user)
+    return config
+
+
+# Shared config for the current run. Set by Test_Suite before running tests.
+_current_config = None
+
+
+def set_config(config):
+    """Set the config used by tests for this run. Called by Test_Suite."""
+    global _current_config
+    _current_config = config
+
+
+def get_config():
+    """Return the current run's config. If none was set, return default config."""
+    global _current_config
+    if _current_config is None:
+        return _default_config()
+    return _current_config
+
+
 class Test_Suite():
-    __slots__ = ["wb_path", "wb", "to_run", "results"]
+    __slots__ = ["wb_path", "wb", "to_run", "results", "config"]
 
     # results is a dict of sheet names, each containing a dict of test names and their results
     # to_run is a list of test classes to run on each sheet
     # wb_path is the path to the workbook
     # wb is a dictionary of pandas dataframes, each representing a sheet in the workbook
 
-    def __init__(self, wb_path, to_run = None):
+    def __init__(self, wb_path, to_run=None, config_path=None):
         self.wb_path = wb_path
+        self.config = load_config(config_path)
+        set_config(self.config)
 
         # Initialize the results dict,
         # levels:  [sheet_name] -> [test_name] -> [test_object]
@@ -417,9 +498,9 @@ class By_Cell(ABC):
     # Generator over pandas dataframes
     # tuple of the cell coordinates and the cell contents
     # This is used to iterate over the cells in the worksheet
-    def pandas_iter(self):
+    def pandas_iter(self, df):
         # For each row in the worksheet
-        for row_idx, row in self.ws.iterrows():
+        for row_idx, row in df.iterrows():
 
             # For each column in the row
             for col_name, cell in row.items():
@@ -439,7 +520,7 @@ class By_Cell(ABC):
             df = self.ws
 
         
-        for cell in self.pandas_iter():
+        for cell in self.pandas_iter(df):
 
             # If the cell is not valid, as given by subclass
             if self.not_valid(cell[1]):
@@ -543,14 +624,18 @@ class Filename_Length(Filename):
 
     def validate(self):
 
-        # If length is greater than 200
-        if len(self.filename) > 200:
+        # If length is greater than 32.  Over 200 big problem.
+        if len(self.filename) > 32:
             # The test failed
             self.status = False
             # Add an issue "location = filename": "contents of filename"
             self.issues["filename"] = self.filename
             # Set message
             self.message = "Filename is > 200 characters"
+        elif len(self.filename) <= 4:
+            self.status = False
+            self.issues["filename"] = self.filename
+            self.message = "Filename is <= 4 characters"
         else:
             # The test passed
             self.status = True
@@ -662,27 +747,25 @@ class File_Encoding(Test):
         # For CSV and other text files, check UTF-8 encoding
         try:
             with open(self.wb_path, 'rb') as f:
-                # Read the file content
-                content = f.read()
-                # Try to decode as UTF-8
-                content.decode('utf-8')
-            
-            # If decoding succeeds, the test passed
-            self.status = True
-            self.message = "File encoding is UTF-8"
-        except UnicodeDecodeError:
-            # If decoding fails, the test failed
-            self.status = False
-            self.issues["file"] = "File encoding is not UTF-8"
-            self.message = "File encoding is not UTF-8"
+                # Read the file content as a list of lines in bytes
+                lines_bytes = f.readlines()
+                # Try to decode each line as UTF-8
+                for row_num, line in enumerate(lines_bytes):
+                    text = line.decode('utf-8', errors='replace')
+
+                    # Check to see if the official replacement character was used
+                    if '\ufffd' in text:
+                        self.issues[f"row {row_num}"] = text
+                        
+
         except Exception as e:
             # Handle other exceptions (e.g., file not found)
             self.status = False
             self.issues["file"] = f"Error reading file: {str(e)}"
             self.message = f"Error checking file encoding: {str(e)}"
         
-        # Mark the test as run
-        self.is_run = True
+        # Pass issues and messages forward
+        Test.validate(self, "File encoding is not UTF-8", "File encoding is UTF-8")
 
 
 # Check that the table is in the upper left corner
@@ -954,7 +1037,7 @@ class Header_Length(Header):
                 assert isinstance(header, str)
 
                 # If bad length
-                if len(header) <=3:
+                if len(header) <=1:
                     self.issues[(idx, header)] = "Header is less than 4 characters"
                 
                 if len(header) > 24:
@@ -1196,76 +1279,94 @@ class Aggregate_Row(Test, Has_Dependency):
     def check_aggregate_row(self, upper_left_corner):
         ws = upper_left_corner.effective_ws
 
+        cfg = get_config().get("aggregate_row", {})
+        words = cfg.get(
+            "aggregate_words",
+            ["total", "sum", "average", "count", "min", "max"],
+        )
+        if not words:
+            regex = None
+        else:
+            regex = re.compile(
+                r"(" + "|".join(re.escape(w) for w in words) + r")",
+                re.IGNORECASE,
+            )
+
         # Get the last row
         last_row = ws.iloc[-1]
 
-        # Search for the words aggregating words
         # List of indices of cells that contain aggregate words
         agg_word_idx = []
-        # Regex to search: "total", "sum", "average", "count", "min", "max" 
-        regex =r"(total|sum|average|count|min|max)"
-        # Iterate over the cells in the last row
         for idx, cell_contents in enumerate(last_row):
-            # If the cell contents is a string
-            if isinstance(cell_contents, str):
-                # If the cell contents contains an aggregate word
-                if re.search(regex, cell_contents, flags = re.IGNORECASE):
-                    # Note its index
+            if isinstance(cell_contents, str) and regex is not None:
+                if regex.search(cell_contents):
                     agg_word_idx.append(idx)
-        
-        # Assume no aggregate words
+
         is_aggregate_row = False
-        # For each aggregate word index
         for idx in agg_word_idx:
-            # If the cell immediately to the right is a number
-            if isinstance(last_row.iloc[idx + 1], (int, float)):
-                # This is probably a true aggregate row
+            if idx + 1 < len(last_row) and isinstance(
+                last_row.iloc[idx + 1], (int, float)
+            ):
                 is_aggregate_row = True
-        
-        # If it is an aggregate row
+                break
+
         if is_aggregate_row:
-            # Add issues for each aggregate word
+            row_idx = ws.index[-1]
             for idx in agg_word_idx:
-                row_idx = ws.index[-1]
-                col = ws.columns[agg_word_idx[idx]]
-                col_idx = agg_word_idx[idx]
-                self.issues[row_idx, (col_idx, col)] = (last_row[idx], last_row[idx + 1])
-        
+                col_idx = idx
+                col = ws.columns[col_idx]
+                self.issues[row_idx, (col_idx, col)] = (
+                    last_row.iloc[idx],
+                    last_row.iloc[idx + 1],
+                )
+
         Test.validate(self, "Last row contains aggregate words", "Last row does not contain aggregate words")
         
 # Look for special characters in the cells
 class Special_Char(Test, By_Cell):
+    # Simple URL pattern for exception: allow cells that look like URLs
+    _DEFAULT_PATTERN = r"[!@#$%&*(){}|<>/]"
+    _URL_PATTERN = re.compile(r"^https?://", re.IGNORECASE)
+    _FREE_TEXT_PATTERN = re.compile(r"[!@#$%&*(){}|<>/]")
 
     def __init__(self, ws):
         # Initialize the test named special_characters
         Test.__init__(self, ws, "special_characters")
+        # Save the config
+        self.config = get_config().get("special_characters", {})
+        self.default_pattern = self.config.get("default_pattern", self._DEFAULT_PATTERN)
+        self.url_pattern = self.config.get("url_pattern", self._URL_PATTERN)
+        self.free_text_pattern = self.config.get("free_text_pattern", self._FREE_TEXT_PATTERN)
+        self.free_text_columns = self.config.get("free_text_columns", [])
+        self.url_columns = self.config.get("url_columns", [])
 
     def validate(self):
-        # Use the default validate method for By_Cell
-        By_Cell.validate(self,
-            "Special characters found",
-            "No special characters found")
-    
-    # Required by By_Cell
-    # Does the cell contain special characters?
-    def not_valid(self, cell):
-
-        # Check if the cell is a string
-        if not isinstance(cell, str):
-            # This test does not apply
-            return False
+        # Check the url columns
+        if len(self.url_columns) > 0:
+            url_df = self.ws[self.url_columns]
+            self.bag_chars_regex = self.url_pattern
+            By_Cell.validate(self, "Valid URL cells found", "Invalid URL cells found", url_df)
         
-        # Check for special characters
-        # This regex matches any character in the quotes
-        # Bad_chars is a list of all the special characters found
-        bad_chars = re.findall(r'[!@#$%&*(){}|<>/]', cell)
+        # Check the free text columns
+        if len(self.free_text_columns) > 0:
+            free_text_df = self.ws[self.free_text_columns]
+            self.bad_chars_regex = self.free_text_pattern
+            By_Cell.validate(self, "Valid free text cells found", "Invalid free text cells found", free_text_df)
 
-        # If there are no special characters, return False
-        if len(bad_chars) == 0:
+        # Check the rest of the cells
+        default_df = self.ws.drop(self.url_columns + self.free_text_columns)
+        self.bad_chars_regex = self.default_pattern
+        By_Cell.validate(self, "No general special characters found", "General special characters found", default_df)
+
+
+    def not_valid(self, cell):
+        """Return True if the cell is not valid (has disallowed special chars). Uses coord for free_text_columns."""
+        if not isinstance(cell, str):
             return False
-        else:
-            # The cell had special characters
-            return True
+
+        bad_chars = re.findall(self.bad_chars_regex, cell)
+        return len(bad_chars) > 0
+
 
 # Search for leading or trailing white space
 class Untrimmed_White_Space(Test, By_Cell):
@@ -1288,8 +1389,11 @@ class Untrimmed_White_Space(Test, By_Cell):
             return False
         
         # This regex matches any white space at the beginning or end of the string
-        # Bad_space is a list of all the leading or trailing white space found
-        bad_space = re.findall(r'^\s|\s$', cell)
+        # Bad_space is a list of all the leading or trailing white space found, but not if the cell is exactly a single space
+        if cell == " ":
+            bad_space = []
+        else:
+            bad_space = re.findall(r'^\s|\s$', cell)
 
         # If there is no leading or trailing white space, return False
         if len(bad_space) == 0:
@@ -1381,7 +1485,7 @@ class Missing_Value_Text(Test, By_Cell):
         
         # This regex matches newlines, tabs, and vertical tabs anywhere
         # bad is a list of all the matches
-        bad = re.findall(r'^(?:(no data)|(nd)|(missing)|(missing data)|(na)|(null)|(\-)|(\.)|(\s+)|(+_))$', cell, flags = re.IGNORECASE)
+        bad = re.findall(r'^(?:(no data)|(nd)|(missing)|(missing data)|(na)|(null)|(\-)|(\.)|(\s+)|(_+))$', cell, flags = re.IGNORECASE)
 
         # If there are matches
         if len(bad)==0:
@@ -1455,32 +1559,39 @@ class Number_Space(Test, By_Cell):
 class Dates(Test, By_Cell):
     def __init__(self, ws):
         Test.__init__(self, ws, "dates")
+        cfg = get_config().get("dates", {})
+        threshold = cfg.get("date_column_ratio_threshold", 0.8)
+        self.threshold = threshold
+
 
     def validate(self):
 
+
         # Coerce all cells to datetimes, 'coerce' will set invalid dates to na
         # 'mixed' will try to parse the dates in any format
-        parsed_dates = self.ws.apply(pd.to_datetime, errors='coerce', format = "mixed")
+        parsed_dates = self.ws.apply(
+            pd.to_datetime, errors="coerce", format="mixed"
+        )
 
         # Check the ratio of valid dates to total dates
         # This will be a series with the column names as the index
         # and the ratio of valid dates as the values
-        ratio_dates = parsed_dates.apply(lambda s: s.notna().mean())
 
-        # Select the columns with more than 80% valid dates
-        # Retrieve these columns names
-        date_cols = ratio_dates[ratio_dates > 0.8].index
-        
-        # Select the columns from the full dataframe with dates
+        # Coerce all cells to datetimes; 'coerce' sets invalid dates to NaT
+
+
+        ratio_dates = parsed_dates.apply(lambda s: s.notna().mean())
+        date_cols = ratio_dates[ratio_dates > self.threshold].index
         date_cols = self.ws[date_cols]
 
-        # Run the validation routine on just these columns
-        By_Cell.validate(self, "Cells with non-ISO dates found", "Either no dates or all dates are ISO", date_cols)
+        By_Cell.validate(
+            self,
+            "Cells with non-ISO dates found",
+            "Either no dates or all dates are ISO",
+            date_cols,
+        )
 
-    
     def not_valid(self, cell):
-        
-        # Check if the cell is a string
         if not isinstance(cell, str):
             # This test does not apply
             return False
