@@ -498,24 +498,32 @@ class By_Cell(ABC):
     # Generator over pandas dataframes
     # tuple of the cell coordinates and the cell contents
     # This is used to iterate over the cells in the worksheet
-    def pandas_iter(self, df):
-        # For each row in the worksheet
+    def pandas_iter(self, df = None):
+
+        # If no dataframe is provided, use the worksheet
+        if df is None:
+            df = self.effective_ws
+
+        # For each row in the worksheet except the first row (headers)
         for row_idx, row in df.iterrows():
 
-            # For each column in the row
-            for col_name, cell in row.items():
+            # For each column
+            for col_idx, col_name in enumerate(df.columns):
+                cell = df.iloc[row_idx, col_idx]
 
                 # Yield the cell coordinates and the cell contents
                 # (row_idx, (col_idx, col_name)), contents)
-                yield (row_idx, (self.ws.columns.get_loc(col_name), col_name)), cell
+                yield (row_idx, (col_idx, col_name)), cell
 
 
     # Cell by cell validation.  
     # Assumes that the not_valid method is implemented
     def validate(self, fail_message, pass_message, df = None):
 
+   
+
         # If provided, df may be a subset of the whole worksheet
-        # If not provided, use the whole worksheet
+        # If not provided, use the effective worksheet
         if df is None:
             df = self.ws
 
@@ -581,16 +589,19 @@ class Worksheet_Name(Test):
 
         # detect special characters in filename
         spec_char = re.search(r"[!@#$%^&*()+=\[\]{};:'\"|\\,<>\?/]", self.sheet_name)
+        message = "Worksheet name: "
         if spec_char:
             self.status = False
 
-            self.issues["contains special characters"] = spec_char.group(0)
+            self.issues["sheet name"] = spec_char.group(0)
+            message += f"contains special characters ({spec_char.group(0)})"
         
         # detect whitespace in filename
         if re.search(r"\s", self.sheet_name):
             self.status = False
 
-            self.issues["contains whitespace"] = self.sheet_name
+            self.issues["sheet name"] = self.sheet_name
+            message += " contains whitespace"
 
         
         if  self.status is None:
@@ -598,9 +609,9 @@ class Worksheet_Name(Test):
             self.status = True
 
             # Set the message
-            self.message = "Worksheet name is acceptable"
+            self.message = "Worksheet name does not contain special characters or whitespace"
         else:
-            self.message = "Worksheet name is not acceptable"
+            self.message = message
 
 
 class Filename(Test):
@@ -789,7 +800,7 @@ class Upper_Left_Corner(Test):
         # Detect whether the headers were defined
         no_headers = self.ws.columns == "Unnamed"
 
-        # If none of the headers are defined, search in the table for the them
+        # If none of the headers are defined, search in the table for them
         if no_headers.all():
             # Check each col for NA values, extract idx of first non-NA in each
             col_starts = np.argmax(mask, axis = 0)
@@ -800,7 +811,7 @@ class Upper_Left_Corner(Test):
 
         # Else one or more of the headers were defined
         else:
-            # So the first col is above the top row of the table
+            # So the first col is the top row of the table
             col_starts = np.array([-1])
 
 
@@ -814,28 +825,32 @@ class Upper_Left_Corner(Test):
         # Set the start of the grid
         # The first nonempty row is where first column starts
         first_row = int(col_starts.min())
+        first_row = first_row + 1
 
         first_col = int(row_starts.min())
 
         
         # Check for blank space before the first column or row
-        if first_col > 0 or first_row >= 0:
+        if first_col > 0 or first_row > 0:
             
             # Where exactly it failed
             self.issues["first_col_idx"] = first_col
-            self.issues["first_row_idx"] = first_row + 1
+            self.issues["first_row_idx"] = first_row
 
             # Save results to share with other tests
             self.first_col_idx = first_col
-            self.first_row_idx = first_row + 1
+            self.first_row_idx = first_row
             # Mark that there is a displaced table
             self.displaced = True
             # Save an effective table
             self.effective_ws = self.ws.iloc[first_row:, first_col:]
-            # First row is the column names
-            cols = self.effective_ws.iloc[0]
-            self.effective_ws.columns = cols
-            self.effective_ws = self.effective_ws[1:].reset_index(drop=True)
+            if first_row > 0:
+                # First row is the column names
+                cols = self.effective_ws.iloc[0]
+                self.effective_ws.columns = cols
+                self.effective_ws = self.effective_ws[1:].reset_index(drop=True)
+            # Else the columns are already assigned correctly
+
         else:
             self.displaced = False
             self.effective_ws = self.ws
@@ -1011,7 +1026,7 @@ class Header_ID(Header):
         headers = self.get_headers(upper_left_corner)
         # Iterate over headers
         if headers[0] == "ID":
-            self.issues[(0, headers[0])] = "First header is ID"
+            self.issues[(0, headers[0])] = headers[0]
 
         Test.validate(self, "First header is ID", "First header is not ID")
 
@@ -1038,12 +1053,12 @@ class Header_Length(Header):
 
                 # If bad length
                 if len(header) <=1:
-                    self.issues[(idx, header)] = "Header is less than 4 characters"
+                    self.issues[(idx, header)] = header
                 
                 if len(header) > 24:
-                    self.issues[(idx, header)] = "Header is more than 24 characters"
+                    self.issues[(idx, header)] = header
 
-            Test.validate(self, "Some headers have improper lengths", "All headers have acceptable lengths")
+            Test.validate(self, "Headers should be between 1 and 24 characters", "All headers have acceptable lengths")
                 
 
 
@@ -1068,7 +1083,7 @@ class Header_First_Char(Header):
 
                 # If bad length
                 if header[0].isdigit():
-                    self.issues[(idx, header)] = "Header starts with digit"
+                    self.issues[(idx, header)] = header
 
             Test.validate(self, "Some headers start with a digit", "No headers start with digits")
                 
@@ -1096,7 +1111,7 @@ class Header_Space(Header):
 
                 # If bad length
                 if " " in header:
-                    self.issues[(idx, header)] = "Header has a space"
+                    self.issues[(idx, header)] = header
                 
 
             Test.validate(self, "Some headers have spaces", "No headers have spaces")
@@ -1126,7 +1141,7 @@ class Header_Word_Separation(Header):
             dash = "-" in header
 
         if sum([camel_case, underscore, dash]) > 1:
-            self.issues[tuple(headers)] = "Headers mix camel case, underscores, and dashes"
+            self.issues["all headers"] = headers
 
             
         Test.validate(self, "Headers use mixture of camel case, underscores, and dashes", "Headers do not use a mixture of camel case, underscores and dashes")
@@ -1148,7 +1163,7 @@ class Header_Special_Characters(Header):
         for idx, header in enumerate(headers):
             assert isinstance(header, str)
             if re.search(r"[!@#$%^&*()+=\[\]{};:'\"|\\,<>\?/]", header):
-                self.issues[(idx, header)] = "Header contains special characters"
+                self.issues[(idx, header)] = header
 
         Test.validate(self, "Headers contain special characters", "Headers do not contain special characters")
 
@@ -1168,7 +1183,7 @@ class Header_Date(Header):
         for idx, header in enumerate(headers):
             assert isinstance(header, str)
             if "date" in header.lower():
-                self.issues[(idx, header)] = "Column may combine YYYY-MM-DD in one column instead of breaking up"
+                self.issues[(idx, header)] = header
 
         Test.validate(self, "Column may combine YYYY-MM-DD in one column instead of breaking up", "Column does not combine YYYY-MM-DD in one column")
 
@@ -1323,7 +1338,7 @@ class Aggregate_Row(Test, Has_Dependency):
         Test.validate(self, "Last row contains aggregate words", "Last row does not contain aggregate words")
         
 # Look for special characters in the cells
-class Special_Char(Test, By_Cell):
+class Special_Char(Test, Has_Dependency, By_Cell):
     # Simple URL pattern for exception: allow cells that look like URLs
     _DEFAULT_PATTERN = r"[!@#$%&*(){}|<>/]"
     _URL_PATTERN = re.compile(r"^https?://", re.IGNORECASE)
@@ -1332,6 +1347,8 @@ class Special_Char(Test, By_Cell):
     def __init__(self, ws):
         # Initialize the test named special_characters
         Test.__init__(self, ws, "special_characters")
+        Has_Dependency.__init__(self, Upper_Left_Corner, Multi_Table)
+
         # Save the config
         self.config = get_config().get("special_characters", {})
         self.default_pattern = self.config.get("default_pattern", self._DEFAULT_PATTERN)
@@ -1340,23 +1357,31 @@ class Special_Char(Test, By_Cell):
         self.free_text_columns = self.config.get("free_text_columns", [])
         self.url_columns = self.config.get("url_columns", [])
 
-    def validate(self):
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_special_characters(upper_left_corner)
+
+    def check_special_characters(self, upper_left_corner):
+        df = upper_left_corner.effective_ws
+
         # Check the url columns
         if len(self.url_columns) > 0:
-            url_df = self.ws[self.url_columns]
+            url_df = df[self.url_columns]
             self.bag_chars_regex = self.url_pattern
-            By_Cell.validate(self, "Valid URL cells found", "Invalid URL cells found", url_df)
+            By_Cell.validate(self, "Invalid URL cells found", "Valid URL cells found", url_df)
         
         # Check the free text columns
         if len(self.free_text_columns) > 0:
-            free_text_df = self.ws[self.free_text_columns]
+            free_text_df = df[self.free_text_columns]
             self.bad_chars_regex = self.free_text_pattern
-            By_Cell.validate(self, "Valid free text cells found", "Invalid free text cells found", free_text_df)
+            By_Cell.validate(self, "Invalid free text cells found", "Valid free text cells found", free_text_df)
 
         # Check the rest of the cells
-        default_df = self.ws.drop(self.url_columns + self.free_text_columns)
+        default_df = df.drop(self.url_columns + self.free_text_columns)
         self.bad_chars_regex = self.default_pattern
-        By_Cell.validate(self, "No general special characters found", "General special characters found", default_df)
+        By_Cell.validate(self, "General special characters found", "No general special characters found", default_df)
 
 
     def not_valid(self, cell):
@@ -1369,16 +1394,25 @@ class Special_Char(Test, By_Cell):
 
 
 # Search for leading or trailing white space
-class Untrimmed_White_Space(Test, By_Cell):
+class Untrimmed_White_Space(Test, Has_Dependency, By_Cell):
     def __init__(self, ws):
         Test.__init__(self, ws, "white_space")
+        Has_Dependency.__init__(self, Upper_Left_Corner, Multi_Table)
 
-    def validate(self):
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_untrimmed_white_space(upper_left_corner)
+
+    def check_untrimmed_white_space(self, upper_left_corner):
+        df = upper_left_corner.effective_ws
 
         # Use the default validate method for By_Cell
         By_Cell.validate(self,
             "Leading or trailing white space found",
-            "No leading or trailing hwhite space found")
+            "No leading or trailing hwhite space found",
+            df)
     
     # Required by By_Cell
     def not_valid(self, cell):
@@ -1402,16 +1436,25 @@ class Untrimmed_White_Space(Test, By_Cell):
             # The cell had leading or trailing white space
             return True
 
-class Newlines_Tabs(Test, By_Cell):
+class Newlines_Tabs(Test, Has_Dependency, By_Cell):
     def __init__(self, ws):
         Test.__init__(self, ws, "newlines_tabs")
+        Has_Dependency.__init__(self, Upper_Left_Corner, Multi_Table)
 
-    def validate(self):
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_newlines_tabs(upper_left_corner)
+
+    def check_newlines_tabs(self, upper_left_corner):
+        df = upper_left_corner.effective_ws
 
         # Use default validate method for By_Cell
         By_Cell.validate(self,
             "Newlines, tabs, or vertical tabs found.",
-            "No newlines, tabs, or vertical tabs found.")
+            "No newlines, tabs, or vertical tabs found.",
+            df)
         
     # Required by By_Cell
     def not_valid(self, cell):
@@ -1464,16 +1507,25 @@ class Newlines_Tabs(Test, By_Cell):
 #             # The cell had newlines
 #             return True
 
-class Missing_Value_Text(Test, By_Cell):
+class Missing_Value_Text(Test, Has_Dependency, By_Cell):
     def __init__(self, ws):
         Test.__init__(self, ws, "missing_value_text")
+        Has_Dependency.__init__(self, Upper_Left_Corner, Multi_Table)
 
-    def validate(self):
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_missing_value_text(upper_left_corner)
+
+    def check_missing_value_text(self, upper_left_corner):
+        df = upper_left_corner.effective_ws
 
         # Use default validate method for By_Cell
         By_Cell.validate(self,
             "Text denoting missing values found.",
-            "No text denoting missing values found.")
+            "No text denoting missing values found.",
+            df)
         
     # Required by By_Cell
     def not_valid(self, cell):
@@ -1495,12 +1547,20 @@ class Missing_Value_Text(Test, By_Cell):
             return True
 
 # Search for cells containing only question marks
-class Question_Mark_Only(Test, By_Cell):
+class Question_Mark_Only(Test, Has_Dependency, By_Cell):
     def __init__(self, ws):
         Test.__init__(self, ws, "question_mark_only")
+        Has_Dependency.__init__(self, Upper_Left_Corner, Multi_Table)
 
-    def validate(self):
-        By_Cell.validate(self, "Cells with just a question mark found", "No question mark cells found")
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_question_mark_only(upper_left_corner)
+
+    def check_question_mark_only(self, upper_left_corner):
+        df = upper_left_corner.effective_ws
+        By_Cell.validate(self, "Cells with just a question mark found", "No question mark cells found", df)
     
     def not_valid(self, cell):
         
@@ -1512,12 +1572,20 @@ class Question_Mark_Only(Test, By_Cell):
         # If the cell is exactly a question mark.
         return cell == "?"
             
-class White_Space_Only(Test, By_Cell):
+class White_Space_Only(Test, Has_Dependency, By_Cell):
     def __init__(self, ws):
         Test.__init__(self, ws, "white_space_only")
+        Has_Dependency.__init__(self, Upper_Left_Corner, Multi_Table)
 
-    def validate(self):
-        By_Cell.validate(self, "Cells with white space only found", "No cells with white space only found")
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_white_space_only(upper_left_corner)
+
+    def check_white_space_only(self, upper_left_corner):
+        df = upper_left_corner.effective_ws
+        By_Cell.validate(self, "Cells with white space only found", "No cells with white space only found", df)
     
     def not_valid(self, cell):
         
@@ -1532,12 +1600,20 @@ class White_Space_Only(Test, By_Cell):
         else:
             return True
 
-class Number_Space(Test, By_Cell):
+class Number_Space(Test, Has_Dependency, By_Cell):
     def __init__(self, ws):
         Test.__init__(self, ws, "white_space_only")
+        Has_Dependency.__init__(self, Upper_Left_Corner, Multi_Table)
 
-    def validate(self):
-        By_Cell.validate(self, "Cells with only spaces and numbers found", "No cells with only spaces and numbers found")
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_number_space(upper_left_corner)
+
+    def check_number_space(self, upper_left_corner):
+        df = upper_left_corner.effective_ws
+        By_Cell.validate(self, "Cells with only spaces and numbers found", "No cells with only spaces and numbers found", df)
     
     def not_valid(self, cell):
         
@@ -1556,20 +1632,28 @@ class Number_Space(Test, By_Cell):
 
 
 
-class Dates(Test, By_Cell):
+class Dates(Test, Has_Dependency, By_Cell):
     def __init__(self, ws):
         Test.__init__(self, ws, "dates")
         cfg = get_config().get("dates", {})
         threshold = cfg.get("date_column_ratio_threshold", 0.8)
         self.threshold = threshold
+        Has_Dependency.__init__(self, Upper_Left_Corner, Multi_Table)
 
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_dates(upper_left_corner)
 
-    def validate(self):
+    def check_dates(self, upper_left_corner):
+
+        df = upper_left_corner.effective_ws
 
 
         # Coerce all cells to datetimes, 'coerce' will set invalid dates to na
         # 'mixed' will try to parse the dates in any format
-        parsed_dates = self.ws.apply(
+        parsed_dates = df.apply(
             pd.to_datetime, errors="coerce", format="mixed"
         )
 
@@ -1582,7 +1666,7 @@ class Dates(Test, By_Cell):
 
         ratio_dates = parsed_dates.apply(lambda s: s.notna().mean())
         date_cols = ratio_dates[ratio_dates > self.threshold].index
-        date_cols = self.ws[date_cols]
+        date_cols = df[date_cols]
 
         By_Cell.validate(
             self,
@@ -1605,14 +1689,22 @@ class Dates(Test, By_Cell):
             return True
 
 
-class Scientific_Notation(Test, By_Cell):
+class Scientific_Notation(Test, Has_Dependency, By_Cell):
     # This test fails for "small" exponents like 1e-3
     # Because pandas reads these as floats automatically
     def __init__(self, ws):
         Test.__init__(self, ws, "scientific_notation")
+        Has_Dependency.__init__(self, Upper_Left_Corner, Multi_Table)
 
-    def validate(self):
-        By_Cell.validate(self, "Cells with scientific notation found", "No cells with scientific notation found")
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_scientific_notation(upper_left_corner)
+
+    def check_scientific_notation(self, upper_left_corner):
+        df = upper_left_corner.effective_ws
+        By_Cell.validate(self, "Cells with scientific notation found", "No cells with scientific notation found", df)
     
     def not_valid(self, cell):
         
@@ -1634,17 +1726,22 @@ class Scientific_Notation(Test, By_Cell):
 
 
 
-class Units(Test, By_Cell, Has_Dependency):
+class Units(Test, Has_Dependency, By_Cell):
     # This test looks for units in the cells
     def __init__(self, ws):
         Test.__init__(self, ws, "units")
-        Has_Dependency.__init__(self, Upper_Left_Corner)
+        Has_Dependency.__init__(self, Upper_Left_Corner, Multi_Table)
 
-    def validate(self, upper_left_corner):
+    def validate(self, upper_left_corner, multi_table):
+        if multi_table.multi_table:
+            self.handle_multi_table()
+        else:
+            self.check_units(upper_left_corner)
+
+    def check_units(self, upper_left_corner):
+        df = upper_left_corner.effective_ws
         # Check that the grid edges test has been run
-        self.check_input(upper_left_corner)
-
-        By_Cell.validate(self, "Cells with units found", "No cells with units found", upper_left_corner.effective_ws)
+        By_Cell.validate(self, "Cells with units found", "No cells with units found", df)
     
     def not_valid(self, cell):
         
