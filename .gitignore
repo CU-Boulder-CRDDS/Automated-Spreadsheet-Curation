@@ -1,2 +1,7 @@
 data
+results
+playground.ipynb
+test.py
+.cursor
+.vscode
 .DS_Store
