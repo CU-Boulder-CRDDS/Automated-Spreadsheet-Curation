@@ -1,8 +1,9 @@
+unsupported_data
 data
 results
 playground.ipynb
 test.py
-detectors.cpython*
 .cursor
 .vscode
 .DS_Store
+*.pyc

@@ -1,0 +1,52 @@
+{
+  "sheet_name": {
+    "special_char_pattern": "[!@#$%^&*()+=\\[\\]{};:'\"|\\\\,<>\\?/]"
+  },
+  "file_name_length": {
+    "min_length": 5,
+    "max_length": 32
+  },
+  "file_name_special_characters": {
+    "special_char_pattern": "[!@#$%^&*()+=\\[\\]{};:'\"|\\\\,<>\\?/]"
+  },
+  "file_encoding": {
+    "valid_encoding": "utf-8"
+  },
+  "header_length": {
+    "min_length": 1,
+    "max_length": 24
+  },
+  "header_special_characters": {
+    "special_char_pattern": "[!@#$%^&*()+=\\[\\]{};:'\"|\\\\,<>\\?/]"
+  },
+  "header_date": {
+    "date_keywords": ["date", "datetime", "timestamp"]
+  },
+  "cell_special_characters": {
+    "default_pattern": "[!@#$%^&*()+=\\[\\]{};:'\"|\\\\,<>\\?/]",
+    "url_pattern": "^https?://",
+    "free_text_pattern": "",
+    "url_columns": [],
+    "free_text_columns": [],
+    "skip_columns": ["Statemnt"]
+  },
+  "cell_aggregate_row": {
+    "aggregate_words": ["total", "sum", "average", "count", "min", "max"]
+  },
+  "cell_dates": {
+    "date_columns": [],
+    "auto_detect_columns": false,
+    "format_code": "%Y/%m/%d",
+    "date_column_threshold": 0.8
+  },
+  "cell_units": {
+    "unit_abbreviations": [
+      "nm", "µm", "um", "mm", "cm", "m", "km",
+      "in", "ft", "yd", "mi",
+      "gal", "L", "mL",
+      "g", "kg", "lb", "oz", "mg", "µg", "ug", "ng", "pg",
+      "µmol", "umol", "mmol", "mol",
+      "s", "sec", "min", "hr", "h", "d", "day", "week", "w", "y", "year", "mo"
+    ]
+  }
+}

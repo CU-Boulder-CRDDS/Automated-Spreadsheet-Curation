@@ -1,7 +1,0 @@
-path,sheet,test_name,message,issues,location,example
-data/5336148_example-module_.csv,file,filename_word_separation,"Filename mixes camel case, underscores, and dashes",,filename,5336148_example-module_.csv
-data/5336148_example-module_.csv,5336148_example-module_,special_characters,Special characters found,,"(1481, (0, 'nodeName'))",IGLV@
-data/5336148_example-module_.csv,5336148_example-module_,special_characters,Special characters found,,"(3341, (0, 'nodeName'))",IGLV@
-data/5336148_example-module_.csv,5336148_example-module_,special_characters,Special characters found,,"(4555, (0, 'nodeName'))",IGLV@
-data/5336148_example-module_.csv,5336148_example-module_,special_characters,Special characters found,,"(5594, (0, 'nodeName'))",IGLV@
-data/5336148_example-module_.csv,5336148_example-module_,special_characters,Special characters found,,"(6067, (0, 'nodeName'))",IGLV@

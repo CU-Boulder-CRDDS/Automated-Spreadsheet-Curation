@@ -1,15 +1,3 @@
 {
-  "special_characters": {
-    "default_pattern": "[!@#$%&*(){}|<>/]",
-    "url_pattern": "https?://",
-    "free_text_pattern": "[!@#$%&*(){}|<>/]",
-    "url_columns": [],
-    "free_text_columns": []
-  },
-  "aggregate_row": {
-    "aggregate_words": ["total", "sum", "average", "count", "min", "max"]
-  },
-  "dates": {
-    "date_column_ratio_threshold": 0.8
-  }
+
 }
