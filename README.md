@@ -13,11 +13,7 @@ contact: ellery.galvin@colorado.edu
 
 ## Tests implemented to date
 - filename short enough
-<<<<<<< HEAD
-- table location in the upper left corner.
-=======
 - table location in the upper left corner
->>>>>>> origin/main
 - column headers acceptable
 - no special characters
 - no untrimmed white space
@@ -39,8 +35,4 @@ conda activate excel
 ```bash
 ipython detectors.py 
 ```
-<<<<<<< HEAD
 Python will output the results of the tests on the demo.xlsx file in the data directory and save the results in both a json and csv file.
-=======
-Python will output the results of the tests on the demo.xlsx file in the data directory and save the results in both a json and csv file.
->>>>>>> origin/main
