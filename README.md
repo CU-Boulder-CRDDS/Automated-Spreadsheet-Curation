@@ -1,14 +1,18 @@
 # Data Curation Workflows
-authors: Ellery Galvin
-date: 2024-04-29
-contact: ellery.galvin@colorado.edu
+authors: Ellery Galvin\
+date: 2024-04-29\
+contact: ellery.galvin@colorado.edu, crdds@colorado.edu
 
 
 ## Directory contents
-- detectors.py implements a series of automated tests for data curation workflows.
-- data contains spreadsheets on which to test detectors.py
 - .gitignore excludes the data directory from version control
+- config.json 
+- demo.xlsx is a file on which to test detectors.py
+- detectors.py implements a series of automated tests for data curation workflows
 - environment.yml contains the conda environment used to run the tests
+- playground.ipynb
+- test.py
+
 
 
 ## Tests implemented to date
