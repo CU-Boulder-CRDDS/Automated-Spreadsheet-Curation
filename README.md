@@ -1,6 +1,6 @@
 # Data Curation Workflows
 authors: Ellery Galvin\
-date: 2024-04-29\
+date: 2026-03-24\
 contact: ellery.galvin@colorado.edu, crdds@colorado.edu
 
 ## Description
@@ -10,13 +10,12 @@ Each test reports:
 - where it failed, and
 - an example offending value.
 
-<<<<<<< HEAD
+
 ## Directory contents
 - .gitignore excludes the data directory from version control
 - config.example.json is an example configuration for test options
 - demo.xlsx is a file on which to test detectors.py
 - detectors.py is the main module that implements a series of automated tests for data curation workflows
-
 
 
 ## Tests Implemented
@@ -161,4 +160,3 @@ Each row corresponds to one issue entry from one failed test.
    - include the new test in the test list above
    - add config options under the correct section (if any)
    - update `config.example.json` with sensible defaults
->>>>>>> 7cb8839 (Significant architecture and error handling overhaul)
