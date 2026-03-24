@@ -7,3 +7,5 @@ test.py
 .vscode
 .DS_Store
 *.pyc
+fairdata_test*
+dist

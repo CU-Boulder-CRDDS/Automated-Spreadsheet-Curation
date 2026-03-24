@@ -1,12 +1,26 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["flit_core >=3.11,<4"]
+build-backend = "flit_core.buildapi"
 
 [project]
-name = "data_curation"
+name = "fairdata"
 version = "0.1.0"
-description = "A suite of tests for data curation"
-requires-python = ">=3.9"
-dependencies = [
-    "pandas>=2.3.0",
+description = "A suite of tests for inspection of tabular data."
+authors = [
+    {name = "Ellery Galvin", email = "ellery.galvin@colorado.edu"},
+    {name = "Center for Research Data and Digital Scholar at the University of Colorado Boulder", email = "crdds@colorado.edu"},
+    {name = "Alexandra Alisa Provo", email = "alexandra.provo@nyu.edu"},
 ]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+keywords = ["data", "curation", "validation", "FAIR"]
+dependencies = [
+    "pandas >= 1.5.0",
+    "numpy >= 1.23.0",
+    "openpyxl >= 3.0.7",
+]
+license-files = ["LICENSE.txt"]
+
+[project.urls]
+Source = "https://github.com/CU-Boulder-CRDDS/Automated-Spreadsheet-Curation"
