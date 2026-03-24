@@ -3,7 +3,7 @@ requires = ["flit_core >=3.11,<4"]
 build-backend = "flit_core.buildapi"
 
 [project]
-name = "fairdata"
+name = "fairdata_eg"
 version = "0.1.0"
 description = "A suite of tests for inspection of tabular data."
 authors = [
