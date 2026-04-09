@@ -261,6 +261,7 @@ class Test_Suite():
             self.wb = pd.read_csv(
                 wb_path, # The file path
                 sep = None, # Automatically detect the separator
+                engine = "python", # Enables sep=None and ensures no c engine.
                 dtype = "str", # Parse all cells as strings, leaves the parsing to the tests
                 header = None, # Do not load the header at all
                 na_values = "", # Treat only empty cells as NA
