@@ -1,5 +1,0 @@
-name: data_curation
-channels:
-  - defaults
-dependencies:
-  - pandas>=2.3
