@@ -8,6 +8,26 @@ from datetime import datetime as dt
 from copy import deepcopy
 import os
 import inspect
+import zipfile
+
+# ISO Strict OOXML uses purl.oclc.org namespaces; openpyxl (pandas' default xlsx engine) does not.
+_STRICT_OOXML_MARKER = "purl.oclc.org/ooxml"
+
+
+def _is_strict_open_xml_spreadsheet(path):
+    """Return True if path is a .xlsx package using Strict OOXML (not transitional SpreadsheetML)."""
+    if not zipfile.is_zipfile(path):
+        return False
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            try:
+                with zf.open("xl/workbook.xml") as f:
+                    head = f.read(65536)
+            except KeyError:
+                return False
+    except (OSError, zipfile.BadZipFile):
+        return False
+    return _STRICT_OOXML_MARKER in head.decode("utf-8", errors="ignore")
 
 
 def _validate_type_error(test_name, arg_name, expected, actual):
@@ -224,6 +244,13 @@ class Test_Suite():
 
         # If the file extension is .xlsx, read the file as an excel file
         if file_extension == ".xlsx":
+            if _is_strict_open_xml_spreadsheet(wb_path):
+                raise ValueError(
+                    f"File {wb_path} is a Strict Open XML Spreadsheet (ISO 29500), not a standard "
+                    "Excel workbook. This package reads standard .xlsx files only. Open the file in "
+                    "Excel or LibreOffice Calc and use Save As to save as a normal Excel workbook "
+                    "(.xlsx), then try again."
+                )
             self.wb = pd.read_excel(
                 io = wb_path, # The file path
                 dtype = "str", # Parse all cells as strings, leaves the parsing to the tests
