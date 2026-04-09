@@ -12,10 +12,12 @@ Each test reports:
 
 
 ## Directory contents
-- .gitignore excludes the data directory from version control
+- .gitignore excludes the data directory from version control, and other files
 - config.example.json is an example configuration for test options
 - demo.xlsx is a file on which to test detectors.py
 - detectors.py is the main module that implements a series of automated tests for data curation workflows
+- pyproject.toml is the specification for the PyPI package
+- LICENSE contains the licensing information for this software
 
 
 ## Tests Implemented
