@@ -10,6 +10,20 @@ Each test reports:
 - where it failed, and
 - an example offending value.
 
+## Installation
+
+```bash
+pip install FAIRspreadsheets
+```
+
+## Usage
+```python
+import fair
+suite = fair.Test_Suite("your_data.csv")
+suite.run()
+suite.report()
+suite.save(format = "csv")
+```
 
 ## Directory contents
 - .gitignore excludes the data directory from version control, and other files
