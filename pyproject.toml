@@ -3,9 +3,9 @@ requires = ["flit_core >=3.11,<4"]
 build-backend = "flit_core.buildapi"
 
 [project]
-name = "fairdata_eg"
-version = "0.1.0"
-description = "A suite of tests for inspection of tabular data."
+name = "FAIRspreadsheets"
+version = "0.0.1"
+description = "A suite of tests for inspection of tabular data ."
 authors = [
     {name = "Ellery Galvin", email = "ellery.galvin@colorado.edu"},
     {name = "Center for Research Data and Digital Scholar at the University of Colorado Boulder", email = "crdds@colorado.edu"},
@@ -21,6 +21,9 @@ dependencies = [
     "openpyxl >= 3.0.7",
 ]
 license-files = ["LICENSE.txt"]
+
+[tool.flit.module]
+name = "fair"
 
 [project.urls]
 Source = "https://github.com/CU-Boulder-CRDDS/Automated-Spreadsheet-Curation"
