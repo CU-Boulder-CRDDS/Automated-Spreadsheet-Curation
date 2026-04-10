@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "FAIRspreadsheets"
-version = "0.0.1"
+version = "0.0.2"
 description = "A suite of tests for inspection of tabular data ."
 authors = [
     {name = "Ellery Galvin", email = "ellery.galvin@colorado.edu"},
