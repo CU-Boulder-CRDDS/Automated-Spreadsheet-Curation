@@ -25,13 +25,21 @@ suite.report()
 suite.save(format = "csv")
 ```
 
-## Directory contents
-- .gitignore excludes the data directory from version control, and other files
-- config.example.json is an example configuration for test options
-- demo.xlsx is a file on which to test detectors.py
-- detectors.py is the main module that implements a series of automated tests for data curation workflows
-- pyproject.toml is the specification for the PyPI package
-- LICENSE contains the licensing information for this software
+## Call signatures
+Test_Suite(wb_path, to_run=None, to_skip=None, config_path=None)
+- wb_path: path to the workbook
+
+Which tests to run?  Defaults to all.  Else, specify one of
+- to_run: list of test names to run, lower case strings as below
+- to_skip: list of test names to skip, lower case strings as below
+
+Extra arguments to replace defaults for tests (see below):
+- config_path: path to the config file, replaces defaults where specified
+
+run(): runs the tests
+report(): prints the results to the console
+save(format = "json"): saves the results to a JSON file
+save(format = "csv"): saves the results to a CSV file
 
 
 ## Tests Implemented
@@ -148,6 +156,16 @@ Columns are exactly:
 Each row corresponds to one issue entry from one failed test.
 
 ## For Developers
+
+
+## Directory contents
+- .gitignore excludes the data directory from version control, and other files
+- config.example.json is an example configuration for test options
+- demo.xlsx is a file on which to test detectors.py
+- detectors.py is the main module that implements a series of automated tests for data curation workflows
+- pyproject.toml is the specification for the PyPI package
+- LICENSE contains the licensing information for this software
+
 
 ### Architecture overview
 - `Test_Suite` discovers concrete tests automatically from subclasses of `Test`
