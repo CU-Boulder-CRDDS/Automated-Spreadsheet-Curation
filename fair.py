@@ -405,13 +405,16 @@ class Test_Suite():
                 except Exception as e:
                     user_kwonly_args = self.config.get(t_obj.name, {})
                     print(
-                        "Warning: Runtime error while executing test "
+                        f"===========\n"
+                        f"Warning: Runtime error while executing test.  Skipping and continuing with other tests where possible.\n"
+                        f"sheet: {positional_args[1]}\n"
                         f"'{t_obj.name}'.\n"
                         f"  positional_args={positional_args}\n"
                         f"  user_keyword_only_args={user_kwonly_args}\n"
                         f"  error_type={type(e).__name__}\n"
-                        f"  error_message={e}\n"
+                        f"  error_message={e}\n\n"
                         f"  traceback:\n{traceback.format_exc()}"
+                        f"\n\n\n"
                     )
                     # Runtime-error tests are treated as not completed.
                     t_obj.status = None
@@ -454,8 +457,7 @@ class Test_Suite():
 
         for sheet, ws in self.wb.items():
             fresh_tests = deepcopy(remaining_tests)
-            
-
+            print(f"Running tests for sheet: {sheet}")
             self.results[sheet] = self._validate_tests(fresh_tests, [ws, sheet])
 
             
@@ -949,14 +951,14 @@ class Sheet_Name(Sheet):
         if spec_char:
             self.status = False
 
-            self.issues["sheet name"] = spec_char.group(0)
+            self.issues["sheet"] = spec_char.group(0)
             message += f"contains special characters ({spec_char.group(0)}) "
         
         # detect whitespace in sheet name
         if re.search(r"\s", self.ws_name):
             self.status = False
 
-            self.issues["sheet name"] = self.ws_name
+            self.issues["sheet"] = self.ws_name
             message += "contains whitespace "
 
         
@@ -1062,6 +1064,8 @@ class Sheet_Multi_Table(Sheet, Has_Dependency):
     def __init__(self,):
         Sheet.__init__(self,)
         Has_Dependency.__init__(self, Sheet_Upper_Left_Corner)
+        self.multi_table = None
+        self.effective_ws = None
 
     def validate(self, ws, ws_name, sheet_empty, sheet_upper_left_corner):
         self.set_positional(ws, ws_name)
@@ -1169,6 +1173,7 @@ class Header(Test, Has_Dependency):
             self.handle_multi_table()
         else:
             self.headers = self.get_headers(sheet_upper_left_corner)
+            self.ws = sheet_upper_left_corner.effective_ws
             fn(self.headers)
 
 
@@ -1357,24 +1362,16 @@ class Header_Date(Header):
         Test.validate(self, "Column may combine YYYY-MM-DD in one column instead of breaking up", "Column does not combine YYYY-MM-DD in one column")
 
 
-class Header_Mixed_Datatypes(Test, Has_Dependency):
+class Header_Mixed_Datatypes(Header):
 
     def __init__(self):
+        Header.__init__(self)
 
-        # Initialize the test named mixed_datatypes
-        Test.__init__(self)
-
-        # Needs to know if multiple tables are present
-        Has_Dependency.__init__(self, Sheet_Multi_Table, Sheet_Upper_Left_Corner)
 
     def validate(self, ws, ws_name, **dependencies):
-        self.ws = ws
-        if dependencies["sheet_multi_table"].multi_table:
-            self.handle_multi_table()
-        else:
-            self.check_mixed_datatypes()
+        self._handle_dependencies(**dependencies, fn=self.check_mixed_datatypes)
         
-    def check_mixed_datatypes(self):
+    def check_mixed_datatypes(self, headers):
         ws = self.ws
         n_rows, n_cols = ws.shape
 
@@ -1439,7 +1436,7 @@ class Cell(Test, Has_Dependency, ABC):
     def __init__(self):
         Test.__init__(self)
         Has_Dependency.__init__(
-            self, Sheet_Upper_Left_Corner, Sheet_Multi_Table)
+            self, Sheet_Empty,Sheet_Upper_Left_Corner, Sheet_Multi_Table)
 
     # Generator over pandas dataframes
     # tuple of the cell coordinates and the cell contents
@@ -1462,8 +1459,10 @@ class Cell(Test, Has_Dependency, ABC):
                 yield (row_idx, (col_idx, col_name)), cell
 
     
-    def _handle_dependencies(self, sheet_upper_left_corner, sheet_multi_table, fn):
-        if sheet_multi_table.multi_table:
+    def _handle_dependencies(self, sheet_empty,sheet_upper_left_corner, sheet_multi_table, fn):
+        if sheet_empty.empty:
+            self.handle_empty()
+        elif sheet_multi_table.multi_table:
             self.handle_multi_table()
         else:
             fn(sheet_upper_left_corner.effective_ws)
