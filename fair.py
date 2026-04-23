@@ -1822,12 +1822,36 @@ class Cell_Number_Space(Cell):
 
 
 class Cell_Dates(Cell):
-    def __init__(self, *, date_columns=None, auto_detect_columns=False,
-                 format_code="%Y/%m/%d", date_column_threshold=0.8):
+    def __init__(self, *,
+        date_columns=None,
+        auto_detect_columns=False,
+        format_code="%Y/%m/%d",
+        date_column_threshold=0.8):
+
         Cell.__init__(self)
-        self.date_columns = _validate_optional_str_list(self.name, "date_columns", date_columns)
+
+        
+        if date_columns is None:
+            self.date_columns = None
+        elif isinstance(date_columns, dict):
+            for sheet_name, columns in date_columns.items():
+                _validate_optional_str_list(self.name, "date_columns", columns)
+                self.date_columns[sheet_name] = columns
+        else:
+            raise ValueError(
+                f"{self.name}: `date_columns` must be a dictionary with sheet names as keys and lists of column names as values."
+            )
+        
         _validate_kwarg_type(self.name, "auto_detect_columns", auto_detect_columns, bool)
-        self.auto_detect_columns = auto_detect_columns
+
+        if auto_detect_columns and date_columns is not None:
+            raise ValueError(
+                f"{self.name}: `auto_detect_columns` and `date_columns` cannot be used together."
+            )
+        else:    
+            self.auto_detect_columns = auto_detect_columns
+
+
         _validate_kwarg_type(self.name, "format_code", format_code, str)
         self.format_code = format_code
         _validate_kwarg_type(self.name, "date_column_threshold", date_column_threshold, (int, float))
@@ -1838,11 +1862,14 @@ class Cell_Dates(Cell):
         self.threshold = date_column_threshold
         
         
-    def validate(self, *ignore, **dependencies):
-        self._handle_dependencies(**dependencies, fn=self._check_dates)
+    def validate(self, _, sheet_name, **dependencies):
+        dc = self.date_columns
+        if dc is None or sheet_name in dc or "*" in dc:
+            self._handle_dependencies(**dependencies, fn=self._check_dates)
+
+
 
     def _check_dates(self, df):
-        date_df = df[self.date_columns]
         
         if self.auto_detect_columns:
             remaining_df = df.drop(self.date_columns)
@@ -1862,6 +1889,10 @@ class Cell_Dates(Cell):
             date_cols = ratio_dates[ratio_dates > self.threshold].index
             # Add the new columns to the date dataframe
             date_df = pd.concat([date_df, remaining_df[date_cols]])
+        elif self.date_columns is not None:
+            date_df = df[self.date_columns]
+        else:
+            date_df = df
 
         # Validate the date dataframe
         Cell.validate(

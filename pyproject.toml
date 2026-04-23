@@ -4,15 +4,15 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "FAIRspreadsheets"
-version = "0.0.3"
-description = "A suite of tests for inspection of tabular data ."
+version = "0.0.4"
+description = "A suite of tests for inspection of tabular data."
 authors = [
     {name = "Ellery Galvin", email = "ellery.galvin@colorado.edu"},
-    {name = "Center for Research Data and Digital Scholar at the University of Colorado Boulder", email = "crdds@colorado.edu"},
+    {name = "Center for Research Data & Digital Scholarship at the University of Colorado Boulder", email = "crdds@colorado.edu"},
     {name = "Alexandra Alisa Provo", email = "alexandra.provo@nyu.edu"},
 ]
 readme = "README.md"
-license = "MIT"
+license = "CC0-1.0"
 requires-python = ">=3.11"
 keywords = ["data", "curation", "validation", "FAIR"]
 dependencies = [
