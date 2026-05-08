@@ -1,10 +1,10 @@
 # Data Curation Workflows
-authors: Ellery Galvin\
-date: 2026-03-24\
+authors: Ellery Galvin, Alexandra Provo\
+date updated: 2026-05-08\
 contact: ellery.galvin@colorado.edu, crdds@colorado.edu
 
 ## Description
-This project checks tabular datasets (`.csv` and `.xlsx`) for common curation issues.  
+This project checks spreadsheet files (`.csv`, `.tsv`, and `.xlsx`) for common data curation issues.  
 Each test reports:
 - what failed,
 - where it failed, and
@@ -36,10 +36,11 @@ Which tests to run?  Defaults to all.  Else, specify one of
 Extra arguments to replace defaults for tests (see below):
 - config_path: path to the config file, replaces defaults where specified
 
-run(): runs the tests
-report(): prints the results to the console
-save(format = "json"): saves the results to a JSON file
-save(format = "csv"): saves the results to a CSV file
+Test_Suite methods:
+- run(): runs the tests
+- report(): prints the results to the console
+- save(format = "json"): saves the results to a JSON file
+- save(format = "csv"): saves the results to a CSV file
 
 
 ## Tests Implemented
@@ -51,6 +52,7 @@ save(format = "csv"): saves the results to a CSV file
 - `file_name_word_separation`: filename does not mix camelCase, underscores, and dashes
 - `file_name_special_characters`: filename has no disallowed special characters
 - `file_encoding`: text files decode cleanly in the configured encoding
+- `file_delimiter`: delimiter in .csv or .tsv file matches the extension
 
 ### Sheet-level tests
 - `sheet_empty`: worksheet is not empty
@@ -64,6 +66,7 @@ save(format = "csv"): saves the results to a CSV file
 - `header_length`: header length is within allowed bounds
 - `header_first_char`: headers should not start with digits
 - `header_space`: headers should not contain spaces
+- `header_untrimmed_white_space`: leading/trailing whitespace in headers is flagged
 - `header_word_separation`: headers should not mix camelCase, underscores, and dashes
 - `header_special_characters`: headers should not contain disallowed special characters
 - `header_date`: date-like header names (for combined date fields) are flagged
@@ -99,6 +102,8 @@ Important conventions:
   - `special_char_pattern` (regex string, default `[!@#$%^&*()+=\[\]{};:'"|\\,<>\?/]`): disallowed characters
 - `file_encoding`
   - `valid_encoding` (string, default `utf-8`): expected text encoding for CSV-like files
+- `file_delimiter`
+  - `valid_delimiter_pairs` (list of tuples, default `[(",",".csv"),("\t",".tsv")]`): expected pairings of delimiters and file extensions. *Note: currently not possible to configure this in a JSON config file since JSON does not allow tuples*
 
 ### Sheet-level options
 - `sheet_name`

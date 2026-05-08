@@ -9,6 +9,7 @@ from copy import deepcopy
 import os
 import inspect
 import zipfile
+import csv
 
 # ISO Strict OOXML uses purl.oclc.org namespaces; openpyxl (pandas' default xlsx engine) does not.
 _STRICT_OOXML_MARKER = "purl.oclc.org/ooxml"
@@ -257,7 +258,7 @@ class Test_Suite():
                 sheet_name = None, # read all sheets returning a dict
                 header = None, # Do not load the header at all
             )
-        elif file_extension == ".csv":
+        elif file_extension == ".csv" or file_extension == ".tsv":
             self.wb = pd.read_csv(
                 wb_path, # The file path
                 sep = None, # Automatically detect the separator
@@ -878,8 +879,45 @@ class File_Encoding(File):
         # Pass issues and messages forward
         Test.validate(self, f"File encoding is not {self.valid_encoding}", f"File encoding is {self.valid_encoding}")
 
+# Compare the text file extension with the delimiter
+class File_Delimiter(File):
 
+    def __init__(self, *, valid_delimiter_pairs=[(",",".csv"),("\t",".tsv")]):
+        # Initialize the test
+        File.__init__(self,)
+        self.valid_delimiter_pairs=valid_delimiter_pairs
+    def validate(self, wb_path):
+        File.set_positional(self, wb_path)
+        self.file_extension = os.path.splitext(self.wb_path)[1].lower()
+        
+        # Only check delimiter for text-based files (CSV, not Excel)
+        if self.file_extension == ".xlsx" or self.file_extension == ".xls":
+            # Excel files are binary ZIP archives, delimiter check doesn't apply
+            self.status = True
+            self.message = "Delimiter check skipped for Excel files (binary format)"
+            self.is_run = True
+            return
+        
+        
+        # For CSV and other text files, use csv sniffer to figure out delimiter
+        try:
+            with open(self.wb_path, 'r') as f:
+                delimiter = csv.Sniffer().sniff(f.read(5000)).delimiter
+                #simplify to be just an if statement
+                #if (delimiter == ',' and file_extension != '.csv') or (delimiter == '\t' and file_extension != ".tsv"):
+                if (delimiter, self.file_extension) not in self.valid_delimiter_pairs:
+                    self.issues["file"] = f"delimiter: {delimiter} and extension: {self.file_extension}"
 
+                #look into way to not interpret \t to an actual tab
+
+        except Exception as e:
+            # Handle other exceptions (e.g., file not found)
+            self.status = False
+            self.issues["file"] = f"Error reading file: {str(e)}"
+            self.message = f"Error checking delimiter: {str(e)}"
+        
+        # Pass issues and messages forward
+        Test.validate(self, f"File delimiter and file extension don't match", f"File delimiter matches extension")
 
 class Sheet(Test, Has_Dependency, ABC):
     def __init__(self,):
@@ -1297,6 +1335,29 @@ class Header_Space(Header):
                 
 
             Test.validate(self, "Some headers have spaces", "No headers have spaces")
+
+# Search for leading or trailing white space in headers
+
+class Header_Untrimmed_White_Space(Header):
+        
+        def __init__(self):
+            Header.__init__(self)
+
+        def validate(self, *ignore, **dependencies):
+            self._handle_dependencies(**dependencies, fn=self.check_headers_untrimmed_space)
+
+        def check_headers_untrimmed_space(self, headers):
+            for idx, header in enumerate(headers):
+
+                assert isinstance(header, str)
+
+                leading_trailing = re.findall(r'^\s|\s$', header)
+                if len(leading_trailing) > 0:
+                    self.issues[(idx, header)] = header
+                
+
+            Test.validate(self, "Leading or trailing white space in header",
+            "No leading or trailing white space in header")
                 
 class Header_Word_Separation(Header):
 
